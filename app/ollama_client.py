@@ -18,10 +18,10 @@ import httpx
 logger = logging.getLogger("leadscan.ollama")
 
 OLLAMA_URL = os.environ.get(
-    "OLLAMA_URL", "http://host.docker.internal:11434/api/generate"
+    "OLLAMA_URL", "http://127.0.0.1:11434/api/generate"
 )
 OLLAMA_TAGS_URL = os.environ.get(
-    "OLLAMA_TAGS_URL", "http://host.docker.internal:11434/api/tags"
+    "OLLAMA_TAGS_URL", "http://127.0.0.1:11434/api/tags"
 )
 OLLAMA_MODEL = os.environ.get(
     "OLLAMA_MODEL", "hf.co/LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0"

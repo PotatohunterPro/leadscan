@@ -1,20 +1,20 @@
 # LeadScan — roda direto do clone git (uma fonte de verdade só).
-# Sem cópias de deploy: o build faz COPY . . do próprio repositório.
+# network_mode: host — o container compartilha a rede do host:
+#   - app escuta SÓ em 127.0.0.1:8000 (uvicorn --host 127.0.0.1) — nunca exposto
+#   - Ollama do host em 127.0.0.1:11434, sem host.docker.internal (evita o
+#     problema de host-gateway apontar pro bridge errado)
 services:
   leadscan:
     build: .
     container_name: leadscan
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
+    network_mode: host
     volumes:
       - ./data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5

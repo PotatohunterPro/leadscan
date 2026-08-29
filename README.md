@@ -13,8 +13,8 @@ Versão enxuta do antigo HubLead, redesenhado para eliminar a classe de bug que 
 | Banco | SQLite (arquivo único em data/) | Uso pessoal, zero serviço extra |
 | Frontend | 1 arquivo HTML + JS puro (sem build) | Sem etapa de build, fácil de editar |
 | WhatsApp | Web Share API com foto(s) + texto; fallback wa.me só texto | Sem QR code, sem sessão, sem dependência externa |
-| Deploy | docker-compose.yml que builda direto do clone git | Elimina a possibilidade de duas cópias dessincronizadas |
-| Acesso público | Nginx do host + Let's Encrypt, container só em 127.0.0.1:8000 | TLS termina no Nginx; app nunca exposto direto |
+| Deploy | docker-compose.yml que builda direto do clone git (network_mode host, Linux) | Elimina a possibilidade de duas cópias dessincronizadas |
+| Acesso público | Nginx do host + Let's Encrypt; container em network_mode host com app só em 127.0.0.1:8000 | TLS termina no Nginx; app nunca exposto direto |
 | Painel admin | Rota /admin no próprio FastAPI, senha única (bcrypt + cookie assinado) | Sem serviço extra, sem outro domínio |
 
 ## Estrutura
