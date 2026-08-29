@@ -45,15 +45,15 @@ if [ ! -f .env ]; then
 fi
 
 # 3.1 Garantir que a senha do admin foi configurada (não subir com painel aberto)
-if ! grep -q "^ADMIN_PASSWORD_HASH=.+" .env; then
+if ! grep -qE "^ADMIN_PASSWORD_HASH=.+" .env; then
     err "ADMIN_PASSWORD_HASH não configurado no .env — gere um hash com:"
-    err "  python3 -c "import bcrypt; print(bcrypt.hashpw(b'SUA_SENHA', bcrypt.gensalt()).decode())""
+    err "  python3 -c \"import bcrypt; print(bcrypt.hashpw(b'SUA_SENHA', bcrypt.gensalt()).decode())\""
     err "e cole em .env antes de continuar. Abortando."
     exit 1
 fi
 
 # 3.2 Mesma coisa pro segredo da sessão (cookie assinado)
-if ! grep -q "^SESSION_SECRET=.+" .env; then
+if ! grep -qE "^SESSION_SECRET=.+" .env; then
     err "SESSION_SECRET não configurado no .env — gere um com:"
     err "  openssl rand -hex 32"
     err "e cole em .env antes de continuar. Abortando."
