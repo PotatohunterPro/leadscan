@@ -45,7 +45,7 @@ leadscan/
 
 ## Deploy na VPS
 
-Pré-requisitos na VPS: Docker + compose plugin, Nginx, Certbot, e o **Ollama já rodando na porta 11434** com o modelo de visão baixado (ollama list deve mostrar hf.co/LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0; se não, o install.sh baixa sozinho).
+Pré-requisito: **apenas o registro DNS** do subdomínio apontando pro IP da VPS (e, se quiser HTTPS automático, o e-mail do Let's Encrypt no .env). O install.sh instala sozinho o que faltar: git, Docker + plugin compose, Ollama + modelo, Nginx e Certbot.
 
 ### Passo zero — desinstalar o HubLead antigo
 
@@ -62,7 +62,7 @@ Ele remove containers/volumes Docker, o systemd unit, o site do Nginx, o certifi
 - Os backups ficam preservados em /opt/hubleads/backups/ (apague com sudo rm -rf /opt/hubleads/backups se não precisar).
 - O clone ~/hublead não é removido pelo script — pode manter como referência ou apagar depois.
 
-### Instalação
+### Instalação (VPS nova ou atualização)
 
 ```bash
 git clone <seu-repositorio>/leadscan.git && cd leadscan
@@ -70,10 +70,11 @@ cp .env.example .env
 # preencha .env:
 #   ADMIN_PASSWORD_HASH: python3 -c "import bcrypt; print(bcrypt.hashpw(b'SUA_SENHA', bcrypt.gensalt()).decode())"
 #   SESSION_SECRET:      openssl rand -hex 32
+#   CERTBOT_EMAIL:       seu e-mail (opcional — ativa HTTPS automático)
 sudo bash install.sh
 ```
 
-O install.sh é **idempotente**: instalação inicial e atualização usam o mesmo comando. Antes de rodar de novo após alterações, sempre git pull primeiro.
+O install.sh é **idempotente**: instalação inicial e atualização usam o mesmo comando. Numa VPS limpa ele instala Docker, Ollama, modelo, Nginx e Certbot automaticamente; valida as rotas com HTTP real no final; e, se CERTBOT_EMAIL estiver preenchido, emite o certificado HTTPS sozinho (o DNS já precisa apontar pra VPS). Antes de rodar de novo após alterações, sempre git pull primeiro.
 
 **Atualizar o LeadScan:**
 
@@ -86,13 +87,15 @@ git pull && sudo bash install.sh
 Com o DNS apontando o subdomínio pro IP da VM:
 
 ```bash
+# se CERTBOT_EMAIL estiver no .env, o install.sh já faz tudo (nginx + certbot);
+# senão, manualmente:
 sudo cp nginx/hublead.conf /etc/nginx/sites-available/hublead.conf
 sudo ln -s /etc/nginx/sites-available/hublead.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d hublead.pradodacostasolucoes.com.br
 ```
 
-O certbot --nginx ajusta o server block pra HTTPS (443 + redirect) e configura a renovação automática.
+O certbot --nginx ajusta o server block pra HTTPS (443 + redirect) e configura a renovação automática. O container do app fica em network_mode host escutando só em 127.0.0.1:8000 — quem termina o TLS é o Nginx do host.
 
 ## Uso
 

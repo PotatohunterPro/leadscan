@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  LeadScan — instalação / atualização (idempotente)
+#  LeadScan — instalação / atualização (idempotente) + bootstrap de VPS nova
 #
 #  Uso:  sudo bash install.sh
 #  Após alterações:  git pull && sudo bash install.sh
 #
-#  NUNCA assume que "container rodando" = "rota funcionando": no final,
-#  valida com chamadas HTTP reais que /extract e /admin/login existem.
+#  Numa VPS limpa, instala o que faltar: git, Docker, plugin compose, Ollama,
+#  modelo de visão, Nginx e Certbot. No final valida com chamadas HTTP reais
+#  que /extract e /admin/login existem — nunca assume "container up" = "rota ok".
 # =============================================================================
 set -Eeuo pipefail
 
@@ -14,13 +15,39 @@ info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
 ok()   { echo -e "\033[1;32m[ OK ]\033[0m $*"; }
 err()  { echo -e "\033[1;31m[ERR ]\033[0m $*" >&2; }
 
+APT_UPDATED=0
+apt_update() {
+    if [ "$APT_UPDATED" = "0" ]; then
+        apt-get update -qq
+        APT_UPDATED=1
+    fi
+}
+
 # roda de qualquer lugar, a partir do próprio diretório (o clone git)
 cd "$(dirname "$0")"
 
-# 1. Dependências
-command -v docker >/dev/null || { err "docker não encontrado. Instale antes de continuar."; exit 1; }
-docker compose version >/dev/null 2>&1 || { err "docker compose (plugin) não encontrado."; exit 1; }
-command -v curl >/dev/null || { err "curl não encontrado (necessário p/ verificação pós-deploy)."; exit 1; }
+# 1. Dependências (bootstrap: instala o que faltar)
+command -v curl >/dev/null || { err "curl não encontrado. Instale antes de continuar."; exit 1; }
+
+if ! command -v git >/dev/null; then
+    info "Instalando git..."
+    apt_update && apt-get install -y git
+fi
+
+if ! command -v docker >/dev/null; then
+    info "Instalando Docker (script oficial)..."
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable --now docker 2>/dev/null || true
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    info "Instalando plugin docker compose..."
+    apt_update
+    if ! apt-get install -y docker-compose-plugin 2>/dev/null && ! apt-get install -y docker-compose-v2 2>/dev/null; then
+        err "Não consegui instalar o plugin compose. Instale manualmente e rode de novo."
+        exit 1
+    fi
+fi
 
 # 2. Ollama e modelo
 if ! command -v ollama >/dev/null; then
@@ -32,7 +59,7 @@ fi
 
 MODEL="hf.co/LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0"
 if ! ollama list | grep -q "$MODEL"; then
-    info "Baixando modelo $MODEL..."
+    info "Baixando modelo $MODEL (pode levar alguns minutos)..."
     ollama pull "$MODEL"
 else
     ok "Modelo $MODEL já está instalado."
@@ -97,5 +124,56 @@ else
     exit 1
 fi
 
+# 8. Nginx (bootstrap) + configuração do site
+if ! command -v nginx >/dev/null; then
+    info "Instalando Nginx..."
+    apt_update && apt-get install -y nginx
+fi
+
+if [ ! -f /etc/nginx/sites-available/hublead.conf ]; then
+    info "Configurando site do Nginx..."
+    cp nginx/hublead.conf /etc/nginx/sites-available/hublead.conf
+    ln -sf /etc/nginx/sites-available/hublead.conf /etc/nginx/sites-enabled/hublead.conf
+    systemctl enable nginx 2>/dev/null || true
+    if nginx -t; then
+        systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+        ok "Site Nginx configurado."
+    else
+        err "nginx -t falhou — confira /etc/nginx/ manualmente."
+    fi
+else
+    ok "Nginx já configurado."
+fi
+
+# 9. Certificado SSL (se CERTBOT_EMAIL configurado no .env)
+DOMAIN=$(grep "^DOMAIN=" .env | cut -d= -f2- | tr -d ' ')
+CERTBOT_EMAIL=$(grep "^CERTBOT_EMAIL=" .env | cut -d= -f2- | tr -d ' ')
+[ -n "$DOMAIN" ] || DOMAIN="hublead.pradodacostasolucoes.com.br"
+
+if [ -n "$CERTBOT_EMAIL" ]; then
+    if ! command -v certbot >/dev/null; then
+        info "Instalando Certbot..."
+        apt_update && apt-get install -y certbot python3-certbot-nginx
+    fi
+    if certbot certificates 2>/dev/null | grep -q "Domains:.*$DOMAIN"; then
+        ok "Certificado para $DOMAIN já existe."
+    else
+        info "Emitindo certificado para $DOMAIN (o DNS precisa apontar pra este servidor)..."
+        if certbot --nginx -d "$DOMAIN" -m "$CERTBOT_EMAIL" --agree-tos --non-interactive --redirect; then
+            ok "HTTPS ativo em https://$DOMAIN"
+        else
+            err "Certbot falhou. Confira o registro DNS de $DOMAIN e rode depois:"
+            err "  sudo certbot --nginx -d $DOMAIN"
+        fi
+    fi
+else
+    info "CERTBOT_EMAIL vazio no .env — pulei o HTTPS. Para ativar, rode:"
+    info "  sudo certbot --nginx -d $DOMAIN"
+fi
+
 ok "=== leadscan instalado e verificado com sucesso ==="
-echo "Acesse: http://$(hostname -I | awk '{print $1}'):8000  (ou configure um proxy reverso/domínio)"
+if [ -n "$CERTBOT_EMAIL" ] && certbot certificates 2>/dev/null | grep -q "Domains:.*$DOMAIN"; then
+    echo "Acesse: https://$DOMAIN"
+else
+    echo "Acesse: http://127.0.0.1:8000 (local) — configure o domínio para acesso público"
+fi
