@@ -87,6 +87,15 @@ if ! grep -qE "^SESSION_SECRET=.+" .env; then
     exit 1
 fi
 
+# 3.3 Normalizar o hash do admin pro docker compose (idempotente)
+#     o compose interpola $VAR no .env — o $ do bcrypt quebraria o hash;
+#     troca $ por $$ e é seguro rodar de novo (não dobra).
+LINHA=$(grep "^ADMIN_PASSWORD_HASH=" .env)
+VALOR=${LINHA#ADMIN_PASSWORD_HASH=}
+VALOR=${VALOR//\$\$/__LS_DOLLAR__}
+VALOR=${VALOR//\$/\$\$}
+VALOR=${VALOR//__LS_DOLLAR__/\$\$}
+sed -i "s|^ADMIN_PASSWORD_HASH=.*|ADMIN_PASSWORD_HASH=${VALOR}|" .env
 # 4. Subir os containers
 info "Subindo containers..."
 docker compose up -d --build
