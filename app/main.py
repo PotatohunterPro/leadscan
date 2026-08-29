@@ -171,16 +171,22 @@ async def extrair_cartao(
             content={"success": False, "error": f"Modelo não devolveu JSON válido: {exc}"},
         )
     except httpx.HTTPError as exc:
-        logger.error("Ollama inacessível: %s", exc)
+        logger.exception("Ollama inacessível (tipo %s): %r", type(exc).__name__, exc)
         return JSONResponse(
             status_code=502,
-            content={"success": False, "error": f"Ollama inacessível: {exc}"},
+            content={
+                "success": False,
+                "error": "Ollama inacessível (" + type(exc).__name__ + "): " + str(exc),
+            },
         )
     except Exception as exc:  # nunca deixar a exceção subir crua
         logger.exception("Erro inesperado na extração")
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": f"Erro interno na extração: {exc}"},
+            content={
+                "success": False,
+                "error": "Erro interno na extração (" + type(exc).__name__ + "): " + str(exc),
+            },
         )
 
     # 4. salvar fotos (frente sempre; verso se enviado)
