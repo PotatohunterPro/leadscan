@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LeadScan — Captura de Cartão</title>
+<style>
+  :root {
+    --verde: #16a34a;
+    --verde-escuro: #15803d;
+    --fundo: #f6f7f9;
+    --cartao: #ffffff;
+    --borda: #e2e4e9;
+    --texto: #1f2430;
+    --texto-suave: #667085;
+    --erro: #dc2626;
+    --ia: #7c3aed;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--fundo); color: var(--texto); line-height: 1.45;
+    padding-bottom: 60px;
+  }
+  header {
+    background: linear-gradient(135deg, #0f9d58, #16a34a);
+    color: #fff; padding: 20px 16px; text-align: center;
+  }
+  header h1 { font-size: 22px; }
+  header p { font-size: 13px; opacity: .9; margin-top: 4px; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  .cartao {
+    background: var(--cartao); border: 1px solid var(--borda);
+    border-radius: 14px; padding: 16px; margin-bottom: 16px;
+  }
+  .cartao h2 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .cartao h2 .bot { background: var(--ia); color: #fff; font-size: 11px;
+    padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+  label .dica { font-weight: 400; color: var(--texto-suave); font-size: 12px; }
+  input[type=text], input[type=tel], input[type=email], select, textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--borda);
+    border-radius: 9px; font-size: 15px; background: #fff; color: var(--texto);
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #bfe3cc; border-color: var(--verde); }
+  .req::after { content: " *"; color: var(--erro); }
+  .campo-ia { border-color: #d9c6ff; background: #faf7ff; }
+  .campo-ia:focus { border-color: var(--ia); outline-color: #e3d7ff; }
+  .foto-box {
+    border: 2px dashed var(--borda); border-radius: 12px; padding: 14px;
+    text-align: center; cursor: pointer; background: #fafbfc; margin-bottom: 10px;
+  }
+  .foto-box.ativo { border-color: var(--verde); background: #f2faf5; }
+  .foto-box input[type=file] { display: none; }
+  .foto-box .rotulo { font-size: 14px; font-weight: 600; color: var(--texto-suave); }
+  .foto-box .sub { font-size: 12px; color: var(--texto-suave); margin-top: 2px; }
+  .previews { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .previews img {
+    width: 96px; height: 96px; object-fit: cover; border-radius: 10px;
+    border: 1px solid var(--borda);
+  }
+  .spinner {
+    display: none; align-items: center; gap: 10px; margin: 12px 0;
+    padding: 12px; background: #f3f4ff; border: 1px solid #dcd6ff;
+    border-radius: 10px; color: var(--ia); font-size: 14px; font-weight: 600;
+  }
+  .spinner.visivel { display: flex; }
+  .spinner .bola {
+    width: 18px; height: 18px; border: 3px solid #dcd6ff;
+    border-top-color: var(--ia); border-radius: 50%;
+    animation: girar .8s linear infinite;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  .aviso { display: none; margin: 12px 0; padding: 12px; border-radius: 10px; font-size: 14px; }
+  .aviso.erro { display: block; background: #fef2f2; border: 1px solid #fecaca; color: var(--erro); }
+  .aviso.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+  .aviso.atenção { display: block; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .linha-botoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  button.primario, button.secundario, button.wa {
+    flex: 1; min-width: 150px; padding: 13px 16px; border: none; border-radius: 10px;
+    font-size: 15px; font-weight: 700; cursor: pointer; color: #fff;
+  }
+  button.primario { background: var(--verde); }
+  button.primario:hover { background: var(--verde-escuro); }
+  button.wa { background: #25d366; color: #075e54; }
+  button.wa:hover { background: #1fb959; }
+  button.secundario { background: #eef0f4; color: var(--texto); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .download { margin-top: 8px; }
+  .download a { display: inline-block; margin-right: 8px; font-size: 13px; color: var(--verde-escuro); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--borda); }
+  th { color: var(--texto-suave); font-size: 12px; text-transform: uppercase; }
+  .vazio { color: var(--texto-suave); font-size: 13px; padding: 10px 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px;
+    background: #eef0f4; font-size: 11px; color: var(--texto-suave); margin-left: 6px; }
+  footer { text-align: center; font-size: 12px; color: var(--texto-suave); margin-top: 20px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--texto-suave); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🃏 LeadScan</h1>
+  <p>Tire uma foto do cartão de visita — a IA preenche o resto</p>
+</header>
+
+<main>
+  <!-- ============ CAPTURA ============ -->
+  <section class="cartao" id="secao-captura">
+    <h2>1 · Foto do cartão</h2>
+    <div class="foto-box" id="foto-frente-box">
+      <input type="file" id="foto-frente" accept="image/*" capture="environment">
+      <div class="rotulo">📷 Frente do cartão <span class="badge">abre a câmera</span></div>
+      <div class="sub">Toque para tirar ou escolher a foto — a IA lê os dados na hora</div>
+    </div>
+    <div class="foto-box" id="foto-verso-box">
+      <input type="file" id="foto-verso" accept="image/*" capture="environment">
+      <div class="rotulo">📄 Verso do cartão <span class="sub">(opcional)</span></div>
+      <div class="sub">Se o cartão tiver informações atrás, fotografe também</div>
+    </div>
+    <div class="previews" id="previews"></div>
+    <div class="spinner" id="spinner"><span class="bola"></span> Analisando com IA…</div>
+    <div class="aviso" id="aviso"></div>
+  </section>
+
+  <!-- ============ FORMULÁRIO ============ -->
+  <section class="cartao" id="secao-form" style="display:none">
+    <h2>2 · Dados do lead <span class="badge">🤖 = lido da foto</span></h2>
+
+    <label class="req">Nome da Loja / Fantasia</label>
+    <input type="text" id="nome_empresa" class="campo-ia" placeholder="Ex.: Padaria Pão Dourado">
+
+    <label>Endereço / Bairro / Cidade <span class="dica">🤖 IA</span></label>
+    <input type="text" id="endereco" class="campo-ia" placeholder="Rua, número, bairro">
+
+    <label>Nome do Contato <span class="req"></span></label>
+    <input type="text" id="nome_contato" class="campo-ia" placeholder="Ex.: Maria Silva">
+
+    <label>Cargo</label>
+    <select id="cargo">
+      <option value="">— selecionar —</option>
+      <option>Proprietário(a)</option>
+      <option>Gerente</option>
+      <option>Vendedor(a)</option>
+      <option>Comprador(a)</option>
+      <option>Atendente</option>
+      <option>Financeiro</option>
+      <option>Outro</option>
+    </select>
+
+    <label class="req">WhatsApp do Contato</label>
+    <input type="tel" id="whatsapp" class="campo-ia" placeholder="(11) 99999-9999">
+
+    <label>Aceita demonstração?</label>
+    <select id="aceita_demonstracao">
+      <option value="">— selecionar —</option>
+      <option value="sim">Sim</option>
+      <option value="nao">Não</option>
+      <option value="talvez">Talvez</option>
+    </select>
+
+    <label>Anotações / Dor principal do cliente</label>
+    <textarea id="anotacoes" placeholder="Ex.: reclamou do sistema atual, quer ver proposta…"></textarea>
+
+    <details>
+      <summary>Contato extra e dados da loja (opcional)</summary>
+
+      <label>Telefone fixo / loja <span class="dica">🤖 IA</span></label>
+      <input type="text" id="telefone" class="campo-ia" placeholder="(11) 3333-4444">
+
+      <label>E-mail da loja <span class="dica">🤖 IA</span></label>
+      <input type="email" id="email" class="campo-ia" placeholder="contato@loja.com.br">
+
+      <label>Segmento <span class="dica">🤖 IA</span></label>
+      <select id="ramo_atividade">
+        <option value="">— selecionar —</option>
+        <option>Varejo</option>
+        <option>Alimentação</option>
+        <option>Serviços</option>
+        <option>Moda</option>
+        <option>Farmácia</option>
+        <option>Autopeças</option>
+        <option>Construção</option>
+        <option>Beleza</option>
+        <option>Outro</option>
+      </select>
+      <input type="text" id="ramo_atividade_outro" style="margin-top:8px;display:none" placeholder="Qual segmento?">
+
+      <label>Possui sistema?</label>
+      <select id="possui_sistema">
+        <option value="">— selecionar —</option>
+        <option value="sim">Sim</option>
+        <option value="nao">Não</option>
+      </select>
+
+      <div id="bloco-sistema" style="display:none">
+        <label>Qual sistema?</label>
+        <input type="text" id="qual_sistema" placeholder="Ex.: PDV Tech, Soma…">
+        <label>Mensalidade (R$)</label>
+        <input type="text" id="mensalidade" placeholder="Ex.: 250">
+      </div>
+    </details>
+
+    <details>
+      <summary>Perguntas de qualificação</summary>
+
+      <label>Suporte é bom?</label>
+      <select id="suporte_bom">
+        <option value="">— selecionar —</option>
+        <option value="sim">Sim</option>
+        <option value="nao">Não</option>
+      </select>
+
+      <label>Trocaria por melhor suporte?</label>
+      <select id="trocaria_suporte">
+        <option value="">— selecionar —</option>
+        <option value="sim">Sim</option>
+        <option value="nao">Não</option>
+      </select>
+
+      <label>Trocaria por melhor preço?</label>
+      <select id="trocaria_preco">
+        <option value="">— selecionar —</option>
+        <option value="sim">Sim</option>
+        <option value="nao">Não</option>
+      </select>
+    </details>
+
+    <details>
+      <summary>Outros dados detectados pela IA</summary>
+      <label>Site <span class="dica">🤖 IA</span></label>
+      <input type="text" id="site" class="campo-ia" placeholder="www.loja.com.br">
+      <label>Redes sociais <span class="dica">🤖 IA</span></label>
+      <input type="text" id="redes_sociais" class="campo-ia" placeholder="@loja, facebook.com/loja">
+    </details>
+
+    <div class="linha-botoes">
+      <button class="secundario" id="btn-salvar">💾 Salvar lead</button>
+      <button class="wa" id="btn-whatsapp">📲 Enviar no WhatsApp</button>
+    </div>
+  </section>
+
+  <!-- ============ ÚLTIMOS LEADS ============ -->
+  <section class="cartao" id="secao-leads">
+    <h2>Últimos leads</h2>
+    <div id="lista-leads"><div class="vazio">Carregando…</div></div>
+  </section>
+
+  <footer>LeadScan · IA local via Ollama · dados ficam no seu servidor</footer>
+</main>
+
+<script>
+"use strict";
+(function () {
+  var estado = { leadId: null, ddi: "55" };
+  var fotos = { frente: null, verso: null };
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- captura de fotos ----------
+  function aoSelecionarFrente(e) {
+    var arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    fotos.frente = arquivo;
+    $("foto-frente-box").classList.add("ativo");
+    adicionarPreview(arquivo, "frente");
+    processarFoto(arquivo);
+  }
+
+  function aoSelecionarVerso(e) {
+    var arquivo = e.target.files && e.target.files[0];
+    if (!arquivo) return;
+    fotos.verso = arquivo;
+    $("foto-verso-box").classList.add("ativo");
+    adicionarPreview(arquivo, "verso");
+  }
+
+  function adicionarPreview(arquivo, lado) {
+    var img = document.createElement("img");
+    img.src = URL.createObjectURL(arquivo);
+    img.alt = lado === "frente" ? "Frente" : "Verso";
+    $("previews").appendChild(img);
+  }
+
+  // ---------- extração com IA ----------
+  function processarFoto(arquivo) {
+    mostrarAviso("", "");
+    var spinner = $("spinner");
+    spinner.classList.add("visivel");
+    $("btn-whatsapp").disabled = true;
+
+    var fd = new FormData();
+    fd.append("image", arquivo);
+
+    fetch("/extract", { method: "POST", body: fd })
+      .then(function (resp) { return resp.json().then(function (dados) { return { ok: resp.ok, dados: dados }; }); })
+      .then(function (r) {
+        spinner.classList.remove("visivel");
+        if (r.ok && r.dados.success) {
+          estado.leadId = r.dados.id;
+          preencherFormulario(r.dados.data);
+          mostrarAviso("Lead salvo (#" + estado.leadId + "). Confira os dados e complete os campos manuais.", "ok");
+          $("secao-form").style.display = "block";
+          $("secao-form").scrollIntoView({ behavior: "smooth" });
+        } else {
+          mostrarAviso("Não consegui ler o cartão: " + (r.dados.error || "erro desconhecido"), "erro");
+        }
+      })
+      .catch(function (erro) {
+        spinner.classList.remove("visivel");
+        mostrarAviso("Falha na comunicação com o servidor: " + erro, "erro");
+      })
+      .finally(function () { $("btn-whatsapp").disabled = false; });
+  }
+
+  // ---------- preenchimento do formulário ----------
+  function preencherFormulario(d) {
+    d = d || {};
+    var mapa = ["nome_empresa", "endereco", "nome_contato", "whatsapp", "telefone", "email", "site", "redes_sociais", "anotacoes"];
+    mapa.forEach(function (campo) {
+      var el = $(campo);
+      if (el && d[campo]) el.value = d[campo];
+    });
+    if (d.cidade && $("endereco").value) $("endereco").value = $("endereco").value + " — " + d.cidade;
+    else if (d.cidade) $("endereco").value = d.cidade;
+
+    // segmento: casa com uma opção; senão usa "Outro" + texto livre
+    if (d.ramo_atividade) {
+      var valor = d.ramo_atividade.trim();
+      var select = $("ramo_atividade");
+      var achou = false;
+      for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value.toLowerCase() === valor.toLowerCase()) {
+          select.value = select.options[i].value; achou = true; break;
+        }
+      }
+      if (!achou) {
+        select.value = "Outro";
+        $("ramo_atividade_outro").style.display = "block";
+        $("ramo_atividade_outro").value = valor;
+      }
+    }
+  }
+
+  // ---------- persistência ----------
+  function persistirLead() {
+    var fd = new FormData();
+    if (estado.leadId) fd.append("lead_id", estado.leadId);
+    var campos = ["nome_empresa", "endereco", "cidade", "nome_contato", "cargo", "whatsapp",
+      "aceita_demonstracao", "anotacoes", "telefone", "email", "ramo_atividade",
+      "possui_sistema", "qual_sistema", "mensalidade", "suporte_bom",
+      "trocaria_suporte", "trocaria_preco", "site", "redes_sociais"];
+    campos.forEach(function (c) { fd.append(c, $(c).value || ""); });
+    if ($("ramo_atividade").value === "Outro") {
+      fd.set("ramo_atividade", $("ramo_atividade_outro").value || "Outro");
+    }
+    if (fotos.frente) fd.append("foto_frente", fotos.frente);
+    if (fotos.verso) fd.append("foto_verso", fotos.verso);
+    return fetch("/leads", { method: "POST", body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.success) estado.leadId = d.id;
+        return d;
+      });
+  }
+
+  // ---------- WhatsApp ----------
+  function normalizarWhatsApp(numero) {
+    var digitos = (numero || "").replace(/\D/g, "");
+    if (!digitos) return "";
+    digitos = digitos.replace(/^0+/, "");
+    if (digitos.length <= 11 && digitos.indexOf(estado.ddi) !== 0) {
+      digitos = estado.ddi + digitos;
+    }
+    return digitos;
+  }
+
+  function montarTexto() {
+    var v = function (id) { return ($(id).value || "").trim(); };
+    var linhas = [];
+    linhas.push("🃏 *Novo Lead — LeadScan*");
+    linhas.push("────────────────");
+    if (v("nome_empresa")) linhas.push("🏪 *Loja:* " + v("nome_empresa"));
+    if (v("nome_contato")) linhas.push("👤 *Contato:* " + v("nome_contato") + (v("cargo") ? " (" + v("cargo") + ")" : ""));
+    if (v("whatsapp")) linhas.push("📱 *WhatsApp:* " + v("whatsapp"));
+    if (v("telefone")) linhas.push("☎️ *Telefone:* " + v("telefone"));
+    if (v("email")) linhas.push("📧 *E-mail:* " + v("email"));
+    if (v("endereco")) linhas.push("📍 *Endereço:* " + v("endereco"));
+    if (v("site")) linhas.push("🔗 *Site:* " + v("site"));
+    if (v("redes_sociais")) linhas.push("📲 *Redes:* " + v("redes_sociais"));
+    if (v("ramo_atividade")) linhas.push("🏷️ *Segmento:* " + v("ramo_atividade"));
+    if (v("aceita_demonstracao")) linhas.push("✅ *Aceita demonstração:* " + v("aceita_demonstracao"));
+    if (v("possui_sistema")) {
+      var sist = "🤖 *Possui sistema:* " + v("possui_sistema");
+      if (v("qual_sistema")) sist += " (" + v("qual_sistema") + ")";
+      if (v("mensalidade")) sist += " — R$ " + v("mensalidade") + "/mês";
+      linhas.push(sist);
+    }
+    if (v("suporte_bom")) linhas.push("🛠️ *Suporte bom:* " + v("suporte_bom"));
+    if (v("trocaria_suporte")) linhas.push("🔄 *Trocaria por suporte:* " + v("trocaria_suporte"));
+    if (v("trocaria_preco")) linhas.push("💰 *Trocaria por preço:* " + v("trocaria_preco"));
+    if (v("anotacoes")) linhas.push("📝 *Anotações:* " + v("anotacoes"));
+    return linhas.join("\n");
+  }
+
+  function validarFormulario() {
+    var faltando = [];
+    if (!($("nome_empresa").value || "").trim()) faltando.push("Nome da Loja");
+    if (!($("nome_contato").value || "").trim()) faltando.push("Nome do Contato");
+    if (!($("whatsapp").value || "").trim()) faltando.push("WhatsApp do Contato");
+    if (faltando.length) {
+      mostrarAviso("Preencha os campos obrigatórios: " + faltando.join(", ") + ".", "erro");
+      return false;
+    }
+    return true;
+  }
+
+  function montarBotoesDownload() {
+    var div = document.createElement("div");
+    div.className = "download";
+    div.innerHTML = "<strong>Anexe a foto manualmente:</strong><br>";
+    ["frente", "verso"].forEach(function (lado) {
+      var f = fotos[lado];
+      if (!f) return;
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(f);
+      a.download = "cartao-" + lado + ".jpg";
+      a.textContent = "⬇ Baixar foto (" + lado + ")";
+      div.appendChild(a);
+    });
+    return div;
+  }
+
+  function enviarWhatsApp() {
+    if (!validarFormulario()) return;
+
+    // persiste o lead antes de compartilhar (melhor esforço — não bloqueia)
+    persistirLead().catch(function (e) { console.warn("persistência falhou:", e); });
+
+    var texto = montarTexto();
+    var arquivos = [];
+    if (fotos.frente) arquivos.push(fotos.frente);
+    if (fotos.verso) arquivos.push(fotos.verso);
+
+    var nav = navigator;
+    var suportaArquivos = nav.share && nav.canShare && arquivos.length &&
+      nav.canShare({ files: arquivos, text: texto });
+
+    if (nav.share && suportaArquivos) {
+      nav.share({ files: arquivos, text: texto })
+        .then(function () { console.log("compartilhado"); })
+        .catch(function (err) {
+          if (err && err.name !== "AbortError") {
+            console.warn(err);
+            mostrarAviso("Compartilhamento cancelado ou falhou: " + err.message, "erro");
+          }
+        });
+      return;
+    }
+
+    if (nav.share) {
+      // navegador com share, mas sem suporte a arquivos — cai no wa.me
+      var numero = normalizarWhatsApp($("whatsapp").value);
+      if (!numero) { mostrarAviso("Informe o WhatsApp para enviar.", "erro"); return; }
+      window.open("https://wa.me/" + numero + "?text=" + encodeURIComponent(texto), "_blank");
+      var aviso = mostrarAviso(
+        "Este navegador não anexa arquivos no compartilhamento. " +
+        "A mensagem foi montada no WhatsApp — anexe a foto manualmente.",
+        "atenção");
+      aviso.appendChild(montarBotoesDownload());
+      return;
+    }
+
+    // sem Web Share API (desktop antigo) — wa.me + download
+    var num2 = normalizarWhatsApp($("whatsapp").value);
+    if (!num2) { mostrarAviso("Informe o WhatsApp para enviar.", "erro"); return; }
+    window.open("https://wa.me/" + num2 + "?text=" + encodeURIComponent(texto), "_blank");
+    var aviso2 = mostrarAviso(
+      "Seu navegador não suporta compartilhar com fotos. " +
+      "A mensagem abriu no WhatsApp — anexe a foto manualmente.",
+      "atenção");
+    aviso2.appendChild(montarBotoesDownload());
+  }
+
+  // ---------- utilitários de UI ----------
+  function mostrarAviso(msg, tipo) {
+    var el = $("aviso");
+    el.className = "aviso";
+    el.textContent = "";
+    if (!msg) return el;
+    el.className = "aviso " + tipo;
+    el.textContent = msg;
+    return el;
+  }
+
+  function mostrarBlocoSistema() {
+    var sim = $("possui_sistema").value === "sim";
+    $("bloco-sistema").style.display = sim ? "block" : "none";
+  }
+
+  function carregarUltimosLeads() {
+    fetch("/leads")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var box = $("lista-leads");
+        if (!d.success || !d.leads || !d.leads.length) {
+          box.innerHTML = '<div class="vazio">Nenhum lead ainda — tire a primeira foto! 📸</div>';
+          return;
+        }
+        var t = "<table><thead><tr><th>Empresa</th><th>Contato</th><th>WhatsApp</th><th>Quando</th></tr></thead><tbody>";
+        d.leads.slice(0, 8).forEach(function (l) {
+          t += "<tr><td>" + esc(l.nome_empresa || "—") + "</td><td>" + esc(l.nome_contato || "—") +
+            "</td><td>" + esc(l.whatsapp || "—") + "</td><td>" + esc((l.criado_em || "").slice(5, 16)) + "</td></tr>";
+        });
+        t += "</tbody></table>";
+        box.innerHTML = t;
+      })
+      .catch(function (e) {
+        $("lista-leads").innerHTML = '<div class="vazio">Não deu pra carregar os leads: ' + esc(String(e)) + "</div>";
+      });
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // ---------- carregar DDI padrão ----------
+  fetch("/config")
+    .then(function (r) { return r.json(); })
+    .then(function (c) { if (c.whatsapp_default_ddi) estado.ddi = c.whatsapp_default_ddi; })
+    .catch(function () { /* mantém 55 */ });
+
+  // ---------- eventos ----------
+  $("foto-frente").addEventListener("change", aoSelecionarFrente);
+  $("foto-verso").addEventListener("change", aoSelecionarVerso);
+  $("foto-frente-box").addEventListener("click", function () { $("foto-frente").click(); });
+  $("foto-verso-box").addEventListener("click", function () { $("foto-verso").click(); });
+  $("possui_sistema").addEventListener("change", mostrarBlocoSistema);
+  $("ramo_atividade").addEventListener("change", function () {
+    $("ramo_atividade_outro").style.display = this.value === "Outro" ? "block" : "none";
+  });
+  $("btn-salvar").addEventListener("click", function () {
+    if (!validarFormulario()) return;
+    persistirLead()
+      .then(function (d) {
+        if (d.success) mostrarAviso("Lead #" + d.id + " salvo com sucesso! 💾", "ok");
+        else mostrarAviso("Erro ao salvar: " + (d.error || "desconhecido"), "erro");
+      })
+      .catch(function (e) { mostrarAviso("Erro ao salvar: " + e, "erro"); });
+  });
+  $("btn-whatsapp").addEventListener("click", enviarWhatsApp);
+
+  carregarUltimosLeads();
+})();
+</script>
+</body>
+</html>

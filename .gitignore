@@ -1,0 +1,16 @@
+# dados e segredos — nunca versionar
+data/
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# editor/os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

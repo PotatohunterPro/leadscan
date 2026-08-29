@@ -1,0 +1,20 @@
+# LeadScan — roda direto do clone git (uma fonte de verdade só).
+# Sem cópias de deploy: o build faz COPY . . do próprio repositório.
+services:
+  leadscan:
+    build: .
+    container_name: leadscan
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

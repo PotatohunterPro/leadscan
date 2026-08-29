@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeadScan — Admin · Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f9d58, #16a34a);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .cartao {
+    background: #fff; border-radius: 16px; padding: 32px; width: 100%; max-width: 380px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.25);
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p { color: #667085; font-size: 13px; margin-bottom: 20px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type=password] {
+    width: 100%; padding: 12px; border: 1px solid #e2e4e9; border-radius: 10px; font-size: 15px;
+  }
+  input:focus { outline: 2px solid #bfe3cc; border-color: #16a34a; }
+  button {
+    width: 100%; margin-top: 16px; padding: 13px; border: none; border-radius: 10px;
+    background: #16a34a; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button:hover { background: #15803d; }
+  .erro { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626;
+    padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; }
+  .voltar { display: block; text-align: center; margin-top: 14px; font-size: 12px; color: #667085; text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="cartao">
+    <h1>🔐 Painel Admin</h1>
+    <p>LeadScan — área restrita. Digite a senha para continuar.</p>
+    {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+    <form method="post" action="/admin/login">
+      <label for="senha">Senha</label>
+      <input type="password" id="senha" name="senha" autofocus autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+    <a class="voltar" href="/">← voltar ao LeadScan</a>
+  </div>
+</body>
+</html>

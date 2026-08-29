@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeadScan — Admin · Leads</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f6f7f9; color: #1f2430; padding-bottom: 40px; }
+  header { background: #1f2430; color: #fff; padding: 16px 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  header h1 { font-size: 18px; }
+  header nav a { color: #d1fae5; text-decoration: none; font-size: 13px; margin-left: 14px; font-weight: 600; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+  .cartao { background: #fff; border: 1px solid #e2e4e9; border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  .filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .filtro { display: flex; flex-direction: column; }
+  .filtro label { font-size: 12px; color: #667085; font-weight: 600; margin-bottom: 4px; }
+  input[type=text], input[type=date] {
+    padding: 9px 12px; border: 1px solid #e2e4e9; border-radius: 9px; font-size: 14px;
+  }
+  button { padding: 9px 16px; border: none; border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .primario { background: #16a34a; color: #fff; }
+  .primario:hover { background: #15803d; }
+  .secundario { background: #eef0f4; color: #1f2430; }
+  .csvexport { background: #7c3aed; color: #fff; text-decoration: none; display: inline-block; }
+  .csvexport:hover { background: #6d28d9; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #f0f1f4; }
+  th { color: #667085; font-size: 12px; text-transform: uppercase; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f4fbf7; }
+  .vazio { color: #667085; font-size: 13px; padding: 12px 0; }
+  .total { font-size: 12px; color: #667085; margin-top: 10px; }
+  /* modal */
+  .modal-fundo { display: none; position: fixed; inset: 0; background: rgba(15,20,30,.55);
+    align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal-fundo.aberto { display: flex; }
+  .modal { background: #fff; border-radius: 16px; max-width: 620px; width: 100%;
+    max-height: 88vh; overflow-y: auto; padding: 20px; }
+  .modal h2 { font-size: 17px; margin-bottom: 4px; }
+  .modal .sub { color: #667085; font-size: 12px; margin-bottom: 14px; }
+  .modal .campo { margin-bottom: 10px; }
+  .modal .campo b { display: block; font-size: 11px; text-transform: uppercase; color: #667085; margin-bottom: 2px; }
+  .modal .campo span { font-size: 14px; }
+  .modal .fotos { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+  .modal .fotos img { width: 130px; border-radius: 10px; border: 1px solid #e2e4e9; }
+  .modal .fechar { float: right; background: #eef0f4; border: none; border-radius: 8px;
+    padding: 8px 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
+  .vazio-foto { color: #a3aab5; font-size: 12px; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LeadScan · Leads</h1>
+  <nav>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/logout">Sair</a>
+  </nav>
+</header>
+<main>
+  <div class="cartao">
+    <h2 style="margin-bottom:12px">Filtrar leads</h2>
+    <div class="filtros">
+      <div class="filtro">
+        <label for="busca">Buscar</label>
+        <input type="text" id="busca" placeholder="nome, contato ou whatsapp" style="min-width:220px">
+      </div>
+      <div class="filtro">
+        <label for="de">De</label>
+        <input type="date" id="de">
+      </div>
+      <div class="filtro">
+        <label for="ate">Até</label>
+        <input type="date" id="ate">
+      </div>
+      <button class="primario" id="btn-buscar">Buscar</button>
+      <button class="secundario" id="btn-limpar">Limpar</button>
+      <a class="csvexport" id="btn-csv" style="padding:9px 16px">⬇ Exportar CSV</a>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <table>
+      <thead><tr><th>Data</th><th>Empresa</th><th>Contato</th><th>WhatsApp</th><th>Segmento</th></tr></thead>
+      <tbody id="corpo"><tr><td colspan="5" class="vazio">Carregando…</td></tr></tbody>
+    </table>
+    <div class="total" id="total"></div>
+  </div>
+</main>
+
+<div class="modal-fundo" id="modal-fundo">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var ROTULOS = {
+    nome_empresa: "Loja / Fantasia", endereco: "Endereço", cidade: "Cidade",
+    nome_contato: "Contato", cargo: "Cargo", whatsapp: "WhatsApp",
+    aceita_demonstracao: "Aceita demonstração", anotacoes: "Anotações",
+    telefone: "Telefone", email: "E-mail", ramo_atividade: "Segmento",
+    possui_sistema: "Possui sistema", qual_sistema: "Qual sistema",
+    mensalidade: "Mensalidade (R$)", suporte_bom: "Suporte bom?",
+    trocaria_suporte: "Trocaria por suporte?", trocaria_preco: "Trocaria por preço?",
+    site: "Site", redes_sociais: "Redes sociais", criado_em: "Criado em"
+  };
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function nomeFoto(caminho) {
+    if (!caminho) return "";
+    var partes = String(caminho).split("/");
+    return partes[partes.length - 1];
+  }
+  function urlAtual() {
+    var p = new URLSearchParams();
+    if ($("busca").value.trim()) p.set("busca", $("busca").value.trim());
+    if ($("de").value) p.set("de", $("de").value);
+    if ($("ate").value) p.set("ate", $("ate").value);
+    var q = p.toString();
+    return "/api/leads" + (q ? "?" + q : "");
+  }
+  function carregar() {
+    $("corpo").innerHTML = '<tr><td colspan="5" class="vazio">Carregando…</td></tr>';
+    $("btn-csv").href = "/api/leads/export" + (urlAtual().slice("/api/leads".length));
+    fetch(urlAtual())
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var tbody = $("corpo");
+        if (!d.leads || !d.leads.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="vazio">Nenhum lead encontrado.</td></tr>';
+          $("total").textContent = "";
+          return;
+        }
+        var h = "";
+        d.leads.forEach(function (l) {
+          h += '<tr data-id="' + l.id + '">' +
+            "<td>" + esc((l.criado_em || "").slice(0, 16)) + "</td>" +
+            "<td>" + esc(l.nome_empresa || "—") + "</td>" +
+            "<td>" + esc(l.nome_contato || "—") + "</td>" +
+            "<td>" + esc(l.whatsapp || "—") + "</td>" +
+            "<td>" + esc(l.ramo_atividade || "—") + "</td></tr>";
+        });
+        tbody.innerHTML = h;
+        $("total").textContent = d.total + " lead(s) encontrado(s). Clique numa linha para ver o detalhe.";
+      })
+      .catch(function (e) {
+        $("corpo").innerHTML = '<tr><td colspan="5" class="vazio">Erro: ' + esc(String(e)) + "</td></tr>";
+      });
+  }
+  function abrirDetalhe(id) {
+    fetch("/api/leads/" + id)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var l = d.lead;
+        var h = '<button class="fechar">✕</button>';
+        h += "<h2>" + esc(l.nome_empresa || "Lead #" + l.id) + "</h2>";
+        h += '<div class="sub">Lead #' + l.id + " · criado em " + esc(l.criado_em || "") + "</div>";
+        h += '<div class="fotos">';
+        h += l.foto_frente_path
+          ? '<img src="/fotos/' + esc(nomeFoto(l.foto_frente_path)) + '" alt="frente">'
+          : '<span class="vazio-foto">sem foto da frente</span>';
+        h += l.foto_verso_path
+          ? '<img src="/fotos/' + esc(nomeFoto(l.foto_verso_path)) + '" alt="verso">'
+          : "";
+        h += "</div>";
+        Object.keys(ROTULOS).forEach(function (chave) {
+          var valor = l[chave];
+          if (valor) h += '<div class="campo"><b>' + esc(ROTULOS[chave]) + '</b><span>' + esc(valor) + "</span></div>";
+        });
+        $("modal").innerHTML = h;
+        $("modal-fundo").classList.add("aberto");
+        $("modal").querySelector(".fechar").addEventListener("click", fechar);
+      })
+      .catch(function (e) {
+        $("modal").innerHTML = '<button class="fechar">✕</button><p>Erro ao carregar: ' + esc(String(e)) + "</p>";
+        $("modal-fundo").classList.add("aberto");
+        $("modal").querySelector(".fechar").addEventListener("click", fechar);
+      });
+  }
+  function fechar() { $("modal-fundo").classList.remove("aberto"); }
+
+  $("btn-buscar").addEventListener("click", carregar);
+  $("btn-limpar").addEventListener("click", function () {
+    $("busca").value = ""; $("de").value = ""; $("ate").value = ""; carregar();
+  });
+  $("corpo").addEventListener("click", function (e) {
+    var tr = e.target.closest("tr");
+    if (tr && tr.dataset.id) abrirDetalhe(tr.dataset.id);
+  });
+  $("modal-fundo").addEventListener("click", function (e) {
+    if (e.target === $("modal-fundo")) fechar();
+  });
+  $("busca").addEventListener("keydown", function (e) { if (e.key === "Enter") carregar(); });
+
+  carregar();
+})();
+</script>
+</body>
+</html>
