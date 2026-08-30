@@ -16,6 +16,19 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 DB_PATH = DATA_DIR / "leadscan.db"
 FOTOS_DIR = DATA_DIR / "fotos"
 
+# Colunas que podem ser expostas na API pública (UI de captura). Fica fora
+# daqui todo dado sensível de qualificação de vendas (anotações, possui_sistema,
+# mensalidade, trocaria_*, caminhos de foto etc.) — só no painel autenticado.
+COLUNAS_PUBLICAS = [
+    "id",
+    "criado_em",
+    "nome_empresa",
+    "nome_contato",
+    "whatsapp",
+    "endereco",
+    "cidade",
+]
+
 # Colunas do lead (snake_case) — espelham o formulário completo, com as
 # fotos e o timestamp. Ordem importa: é a ordem das colunas no CSV também.
 CAMPOS = [
@@ -111,6 +124,18 @@ def buscar_lead(lead_id: int) -> dict | None:
         return _para_dict(linha) if linha else None
 
 
+def listar_leads_publico(limite: int = 20) -> list[dict]:
+    """Últimos leads, apenas colunas públicas (sem dados sensíveis)."""
+    limite = max(1, min(int(limite), 100))
+    with _conexao() as con:
+        linhas = con.execute(
+            f"SELECT {', '.join(COLUNAS_PUBLICAS)} FROM leads "
+            "ORDER BY id DESC LIMIT ?",
+            [limite],
+        ).fetchall()
+        return [_para_dict(l) for l in linhas]
+
+
 def listar_leads(
     busca: str = "",
     de: str | None = None,
@@ -156,6 +181,7 @@ def total_leads() -> int:
 
 
 def agora_iso() -> str:
+    """Timestamp em UTC, sempre o mesmo fuso (predictável pro filtro de datas)."""
     from datetime import datetime, timezone
 
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

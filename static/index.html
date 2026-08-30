@@ -260,9 +260,19 @@
   var $ = function (id) { return document.getElementById(id); };
 
   // ---------- captura de fotos ----------
+  function limparPreviews() { $("previews").innerHTML = ""; }
+
   function aoSelecionarFrente(e) {
     var arquivo = e.target.files && e.target.files[0];
     if (!arquivo) return;
+    // novo cartão fotografado = novo lead (evita sobrescrever o anterior e acumular previews)
+    estado.leadId = null;
+    fotos.verso = null;
+    $("foto-verso-box").classList.remove("ativo");
+    limparPreviews();
+    var aviso = $("aviso");
+    aviso.className = "aviso";
+    aviso.textContent = "";
     fotos.frente = arquivo;
     $("foto-frente-box").classList.add("ativo");
     adicionarPreview(arquivo, "frente");
@@ -323,8 +333,10 @@
       var el = $(campo);
       if (el && d[campo]) el.value = d[campo];
     });
-    if (d.cidade && $("endereco").value) $("endereco").value = $("endereco").value + " — " + d.cidade;
-    else if (d.cidade) $("endereco").value = d.cidade;
+    var end = $("endereco");
+    if (d.cidade && end.value.indexOf(d.cidade) === -1) {
+      end.value = (end.value ? end.value + " — " : "") + d.cidade;
+    }
 
     // segmento: casa com uma opção; senão usa "Outro" + texto livre
     if (d.ramo_atividade) {
@@ -348,13 +360,20 @@
   function persistirLead() {
     var fd = new FormData();
     if (estado.leadId) fd.append("lead_id", estado.leadId);
-    var campos = ["nome_empresa", "endereco", "cidade", "nome_contato", "cargo", "whatsapp",
+    // atenção: NÃO listar "cidade" aqui — não existe input com esse id (a IA
+    // já concatena a cidade dentro de "endereco"). Erro aqui quebrava salvar e WhatsApp.
+    var campos = ["nome_empresa", "endereco", "nome_contato", "cargo", "whatsapp",
       "aceita_demonstracao", "anotacoes", "telefone", "email", "ramo_atividade",
       "possui_sistema", "qual_sistema", "mensalidade", "suporte_bom",
       "trocaria_suporte", "trocaria_preco", "site", "redes_sociais"];
-    campos.forEach(function (c) { fd.append(c, $(c).value || ""); });
-    if ($("ramo_atividade").value === "Outro") {
-      fd.set("ramo_atividade", $("ramo_atividade_outro").value || "Outro");
+    try {
+      campos.forEach(function (c) { fd.append(c, $(c).value || ""); });
+      if ($("ramo_atividade").value === "Outro") {
+        fd.set("ramo_atividade", $("ramo_atividade_outro").value || "Outro");
+      }
+    } catch (e) {
+      // garante que o erro vira rejeição de Promise (o .catch do chamador funciona)
+      return Promise.reject(e);
     }
     if (fotos.frente) fd.append("foto_frente", fotos.frente);
     if (fotos.verso) fd.append("foto_verso", fotos.verso);

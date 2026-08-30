@@ -58,6 +58,24 @@ class TestDb(unittest.TestCase):
         db.salvar_lead({"nome_empresa": "Última"})
         self.assertIsNotNone(db.ultima_extracao_sucesso())
 
+    def test_lista_publica_sem_dados_sensiveis(self):
+        db.salvar_lead({
+            "nome_empresa": "Loja Pública",
+            "anotacoes": "cliente quer trocar de sistema",
+            "mensalidade": "250",
+            "trocaria_suporte": "sim",
+        })
+        leads = db.listar_leads_publico(limite=10)
+        lead = next(l for l in leads if l["nome_empresa"] == "Loja Pública")
+        # campos públicos presentes
+        self.assertIn("nome_contato", lead)
+        self.assertIn("whatsapp", lead)
+        # sensíveis NÃO vazam
+        self.assertNotIn("anotacoes", lead)
+        self.assertNotIn("mensalidade", lead)
+        self.assertNotIn("trocaria_suporte", lead)
+        self.assertNotIn("foto_frente_path", lead)
+
 
 if __name__ == "__main__":
     unittest.main()

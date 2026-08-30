@@ -101,23 +101,26 @@ def extrair_json_da_resposta(texto: str) -> dict:
     return dados
 
 
-async def extrair_dados(imagem_bytes: bytes) -> dict:
-    """Envia a imagem ao modelo de visão local e devolve os campos extraídos.
+async def extrair_dados(imagens: list[bytes]) -> dict:
+    """Envia uma ou mais imagens ao modelo de visão local e devolve os campos.
+
+    A primeira imagem deve ser a frente; a segunda (se houver) o verso.
 
     Levanta httpx.HTTPError se o Ollama não responder (o chamador converte
     em 502) e ValueError se a resposta não for JSON válido (o chamador
     converte em 422). Nunca retorna campos obrigatórios ausentes.
     """
-    img_b64 = base64.b64encode(imagem_bytes).decode("ascii")
+    imgs_b64 = [base64.b64encode(im).decode("ascii") for im in imagens]
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": PROMPT,
-        "images": [img_b64],
+        "images": imgs_b64,
         "stream": False,
         "options": {"temperature": 0.1},
     }
     logger.info(
-        "Chamando Ollama modelo=%s imagem=%d bytes", OLLAMA_MODEL, len(imagem_bytes)
+        "Chamando Ollama modelo=%s imagens=%d total=%d bytes",
+        OLLAMA_MODEL, len(imagens), sum(len(i) for i in imagens),
     )
     async with httpx.AsyncClient(timeout=TIMEOUT_SEGUNDOS) as client:
         resp = await client.post(OLLAMA_URL, json=payload)

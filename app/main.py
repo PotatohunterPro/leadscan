@@ -94,6 +94,23 @@ def salvar_foto(imagem_bytes: bytes, lado: str) -> str:
     return f"fotos/{nome}"
 
 
+def _apagar_foto(caminho: str | None) -> None:
+    """Remove uma foto salva (rollback / limpeza de órfãos).
+
+    Usada quando a persistência do lead falha depois de salvar a foto, ou
+    quando uma atualização substitui a foto por outra.
+    """
+    if not caminho:
+        return
+    try:
+        nome = caminho.split("/")[-1]
+        arquivo = db.FOTOS_DIR / nome
+        if arquivo.exists():
+            arquivo.unlink()
+    except OSError:
+        logger.exception("Não consegui apagar foto órfã %s", caminho)
+
+
 def exige_admin(request: Request) -> None:
     """Dependência p/ páginas HTML do admin: redireciona pro login."""
     if not auth.cookie_valido(request.cookies.get(auth.SESSION_COOKIE)):
@@ -155,15 +172,22 @@ async def extrair_cartao(
             content={"success": False, "error": "Imagem grande demais (máximo 20MB)."},
         )
 
-    # 2. redimensionar
+    # 2. redimensionar (frente sempre; verso se enviado)
     try:
         imagem_ok = redimensionar(dados_img)
+        dados_verso = None
+        verso_ok = None
+        if verso is not None:
+            dados_verso = await verso.read()
+            if dados_verso:
+                verso_ok = redimensionar(dados_verso)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"success": False, "error": str(exc)})
 
-    # 3. IA local (Ollama)
+    # 3. IA local (Ollama) — manda a frente e o verso (se houver)
+    imagens = [imagem_ok] + ([verso_ok] if verso_ok else [])
     try:
-        extraidos = await extrair_dados(imagem_ok)
+        extraidos = await extrair_dados(imagens)
     except ValueError as exc:
         logger.warning("Extração falhou (JSON inválido): %s", exc)
         return JSONResponse(
@@ -190,14 +214,17 @@ async def extrair_cartao(
         )
 
     # 4. salvar fotos (frente sempre; verso se enviado)
+    fotos_salvas: list[str] = []
     try:
         lead = dict(extraidos)
         lead["foto_frente_path"] = salvar_foto(dados_img, "frente")
-        if verso is not None:
-            dados_verso = await verso.read()
-            if dados_verso:
-                lead["foto_verso_path"] = salvar_foto(dados_verso, "verso")
+        fotos_salvas.append(lead["foto_frente_path"])
+        if verso_ok:
+            lead["foto_verso_path"] = salvar_foto(dados_verso, "verso")
+            fotos_salvas.append(lead["foto_verso_path"])
     except ValueError as exc:
+        for f in fotos_salvas:
+            _apagar_foto(f)
         return JSONResponse(status_code=422, content={"success": False, "error": str(exc)})
 
     # 5. persistir lead com os campos extraídos + timestamp
@@ -205,6 +232,8 @@ async def extrair_cartao(
         lead_id = db.salvar_lead(lead)
     except Exception as exc:
         logger.exception("Falha ao salvar lead no SQLite")
+        for f in fotos_salvas:
+            _apagar_foto(f)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": f"Falha ao salvar no banco: {exc}"},
@@ -216,8 +245,12 @@ async def extrair_cartao(
 
 @app.get("/leads")
 def listar_leads_publico(limite: int = 20):
-    """Últimos leads pra alimentar a lista simples da UI."""
-    leads = db.listar_leads(limite=max(1, min(limite, 100)))
+    """Últimos leads pra alimentar a lista simples da UI — só colunas públicas.
+
+    Dados sensíveis de qualificação (anotações, sistema, mensalidade, etc.)
+    ficam restritos ao painel admin (/api/leads).
+    """
+    leads = db.listar_leads_publico(limite=limite)
     return {"success": True, "leads": leads}
 
 
@@ -253,10 +286,21 @@ async def salvar_lead_completo(request: Request):
         lead_id = 0
 
     try:
-        if lead_id and db.buscar_lead(lead_id):
+        existente = db.buscar_lead(lead_id) if lead_id else None
+        antigas = (
+            [existente.get("foto_frente_path"), existente.get("foto_verso_path")]
+            if existente
+            else []
+        )
+        if existente:
             db.atualizar_lead(lead_id, dados)
         else:
             lead_id = db.salvar_lead(dados)
+        # apaga fotos antigas substituídas por novas nesta atualização (evita órfãos)
+        novas = {dados.get("foto_frente_path"), dados.get("foto_verso_path")}
+        for f in antigas:
+            if f and f not in novas:
+                _apagar_foto(f)
     except Exception as exc:
         logger.exception("Falha ao salvar lead completo")
         return JSONResponse(

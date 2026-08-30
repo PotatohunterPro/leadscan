@@ -87,7 +87,11 @@ if ! grep -qE "^SESSION_SECRET=.+" .env; then
     exit 1
 fi
 
-# 3.3 Normalizar o hash do admin pro docker compose (idempotente)
+# 3.3 Ler o domínio do .env (usado mais abaixo no server block do Nginx)
+DOMAIN=$(grep "^DOMAIN=" .env | cut -d= -f2- | tr -d ' ')
+[ -n "$DOMAIN" ] || DOMAIN="hublead.pradodacostasolucoes.com.br"
+
+# 3.4 Normalizar o hash do admin pro docker compose (idempotente)
 #     o compose interpola $VAR no .env — o $ do bcrypt quebraria o hash;
 #     troca $ por $$ e é seguro rodar de novo (não dobra).
 LINHA=$(grep "^ADMIN_PASSWORD_HASH=" .env)
@@ -142,6 +146,8 @@ fi
 if [ ! -f /etc/nginx/sites-available/hublead.conf ]; then
     info "Configurando site do Nginx..."
     cp nginx/hublead.conf /etc/nginx/sites-available/hublead.conf
+    # usa o DOMAIN do .env no server_name (o arquivo tem um valor padrão)
+    sed -i "s|server_name .*;|server_name $DOMAIN;|" /etc/nginx/sites-available/hublead.conf
     ln -sf /etc/nginx/sites-available/hublead.conf /etc/nginx/sites-enabled/hublead.conf
     systemctl enable nginx 2>/dev/null || true
     if nginx -t; then
@@ -155,9 +161,7 @@ else
 fi
 
 # 9. Certificado SSL (se CERTBOT_EMAIL configurado no .env)
-DOMAIN=$(grep "^DOMAIN=" .env | cut -d= -f2- | tr -d ' ')
 CERTBOT_EMAIL=$(grep "^CERTBOT_EMAIL=" .env | cut -d= -f2- | tr -d ' ')
-[ -n "$DOMAIN" ] || DOMAIN="hublead.pradodacostasolucoes.com.br"
 
 if [ -n "$CERTBOT_EMAIL" ]; then
     if ! command -v certbot >/dev/null; then
