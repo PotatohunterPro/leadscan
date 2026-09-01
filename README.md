@@ -1,6 +1,8 @@
 # 🃏 LeadScan — captura de cartão de visita com IA local
 
-Sistema pessoal e simples: **tire foto de um cartão de visita → a IA (rodando localmente via Ollama) extrai os dados → o lead é salvo → envie no WhatsApp com foto + texto já prontos.**
+Sistema pessoal e simples: **tire foto de um cartão de visita → a IA (OCR local + modelo de visão via Ollama) extrai as 📇 INFORMAÇÕES DO CARTÃO → você decide o que copiar para o lead → 💾 salva tudo junto → envie no WhatsApp com foto + texto já prontos.**
+
+O cartão é uma camada **complementar** do lead (V2): o que o vendedor digita nunca é sobrescrito, frente + verso formam um único cartão, e as duas fontes — 👤 manual e 🤖 cartão — são salvas no MESMO lead.
 
 Versão enxuta do antigo HubLead, redesenhado para eliminar a classe de bug que derrubou aquele projeto: **uma fonte de verdade só, sem cópias de código**. Não existe diretório de deploy separado — o docker-compose.yml builda direto do clone git.
 
@@ -9,6 +11,7 @@ Versão enxuta do antigo HubLead, redesenhado para eliminar a classe de bug que 
 | Camada | Escolha | Por quê |
 |---|---|---|
 | IA | Ollama local (host, porta 11434) | Já validado, roda em CPU, sem custo de API |
+| OCR local | Tesseract (`tesseract-ocr-por`) no container, via pytesseract | Telefone/CEP/e-mail/URL lidos de forma determinística; roda dentro do container com ~1 GB de RAM |
 | Backend | Python + FastAPI, 1 processo | Simples, sem framework de hooks separado |
 | Banco | SQLite (arquivo único em data/) | Uso pessoal, zero serviço extra |
 | Frontend | 1 arquivo HTML + JS puro (sem build) | Sem etapa de build, fácil de editar |
@@ -23,12 +26,16 @@ Versão enxuta do antigo HubLead, redesenhado para eliminar a classe de bug que 
 leadscan/
 ├── app/
 │   ├── main.py              # FastAPI: /health, /extract, /leads, /admin/*, estáticos
-│   ├── db.py                # SQLite: schema + CRUD simples
-│   ├── ollama_client.py     # extrair_dados(imagem_bytes) -> dict (parse JSON defensivo)
+│   ├── cartao.py            # pipeline frente+verso: OCR → VLM → fusão → validação → 📇
+│   ├── imagem.py            # pré-processamento (EXIF, escala 1800/1024, contraste, Otsu)
+│   ├── ocr.py               # Tesseract local (por+eng, PSM 6, rotação 90/180/270)
+│   ├── validadores.py       # validação determinística (telefone, CEP, e-mail, URL, CNPJ)
+│   ├── db.py                # SQLite: schema + CRUD + tabela lead_cartao (1:1 com leads)
+│   ├── ollama_client.py     # LFM2.5-VL-450M: visão/interpretação (parse JSON defensivo)
 │   ├── auth.py              # sessão/cookie do admin (bcrypt + itsdangerous)
 │   └── requirements.txt
 ├── static/
-│   └── index.html           # UI única: captura, /extract, formulário, WhatsApp
+│   └── index.html           # UI única: captura, 📇 do cartão, formulário, WhatsApp
 ├── templates/
 │   ├── admin_login.html     # login do admin
 │   ├── admin_status.html    # dashboard: status da IA + últimos leads
@@ -100,18 +107,18 @@ O certbot --nginx ajusta o server block pra HTTPS (443 + redirect) e configura a
 ## Uso
 
 1. Abra https://hublead.pradodacostasolucoes.com.br/ no celular.
-2. Toque em **Frente do cartão** — a câmera abre; fotografe o cartão.
-3. A IA preenche o formulário (campos 🤖); complete os manuais (qualificação, anotações, etc.).
-4. Toque em **Enviar no WhatsApp**: a folha de compartilhamento nativa abre com a **foto + texto juntos** — escolha o contato e envie.
+2. Toque em **Frente do cartão** — a câmera abre; fotografe o cartão (o verso é opcional; fotografar o verso re-analisa frente+verso juntos).
+3. A IA mostra a seção **📇 INFORMAÇÕES DO CARTÃO** — ela **não mexe no formulário**. Para aproveitar um dado, toque em **[ Usar no Lead ]**: ele só copia para campos **vazios**; o que você já digitou nunca é substituído (regra absoluta do V2).
+4. Complete/confira os campos manuais (**👤 Dados do lead**) e toque em **Enviar no WhatsApp**: a folha de compartilhamento nativa abre com a **foto + texto juntos** — escolha o contato e envie.
    - Em navegadores sem suporte a arquivos na Web Share API (desktop), cai no fallback wa.me só com o texto + aviso pra anexar a foto manualmente (com botão de download).
-5. **Salvar lead** grava o formulário completo no SQLite (a extração da frente já salva um lead parcial automaticamente).
+5. **💾 Salvar lead** grava no SQLite **o lead único**: dados manuais + INFORMAÇÕES DO CARTÃO (tabela `lead_cartao`, 1:1). A análise da foto NÃO salva nada sozinha.
 
 ### Painel admin
 
 https://hublead.pradodacostasolucoes.com.br/admin — pede a senha do .env. Mostra:
 
-- **Status da IA**: 🟢/🔴 conectividade com o Ollama, modelo configurado × instalado, última extração bem-sucedida, botão "Testar agora".
-- **Leads**: lista completa com busca por nome/contato/whatsapp, filtro por período, detalhe com fotos e **exportação CSV**.
+- **Status da IA**: 🟢/🔴 conectividade com o Ollama, modelo configurado × instalado, **Tesseract (OCR local) disponível/ausente**, última extração bem-sucedida, botão "Testar agora".
+- **Leads**: lista completa com busca por nome/contato/whatsapp, filtro por período, detalhe com fotos, **📇 informações do cartão** quando houver e **exportação CSV**.
 
 ## API
 
@@ -119,13 +126,13 @@ https://hublead.pradodacostasolucoes.com.br/admin — pede a senha do .env. Most
 |---|---|---|
 | /health | GET | {"status":"ok"} — healthcheck do Docker e do install.sh |
 | / | GET | UI (static/index.html) |
-| /extract | POST | multipart image (+ verso opcional). Redimensiona, extrai com IA, salva o lead. Sucesso: {"success":true,"id":N,"data":{...}}. Erros: 422 (JSON inválido/imagem inválida), 502 (Ollama fora), 500 (interno) — sempre com mensagem específica |
+| /extract | POST | multipart image (+ verso opcional). Pré-processa → OCR → IA de visão → fusão → validação e devolve `cartao` (📇), `data` (formato antigo), `fotos` (paths já salvos) e `avisos`. **NÃO cria lead** (regra 9 — só com `salvar=1`, compatibilidade). Erros: 422 (imagem/JSON), 413 (grande), 502 (Ollama fora), 500 (interno) — sempre com mensagem específica |
 | /leads | GET | últimos leads (JSON, limite padrão 20) |
-| /leads | POST | persiste o formulário completo (multipart; com lead_id atualiza em vez de duplicar) |
+| /leads | POST | persiste o formulário completo (multipart): campos manuais + `cartao_json` (📇) + `foto_frente_path`/`foto_verso_path` (reaproveitados do /extract); com `lead_id` atualiza em vez de duplicar |
 | /config | GET | defaults da UI (ex.: DDI do WhatsApp) |
 | /admin/login | GET/POST | login por senha (cookie assinado httponly+secure) |
 | /admin, /admin/leads | GET | painel (exige sessão) |
-| /api/status | GET | status do Ollama/modelo/última extração (admin) |
+| /api/status | GET | status do Ollama/modelo/última extração + Tesseract (OCR local) (admin) |
 | /api/leads | GET | lista com busca/de/ate/limite (admin) |
 | /api/leads/export | GET | CSV com os mesmos filtros (admin) |
 | /api/leads/{id} | GET | detalhe completo (admin) |
@@ -135,7 +142,7 @@ https://hublead.pradodacostasolucoes.com.br/admin — pede a senha do .env. Most
 
 ```bash
 curl -F "image=@cartao.jpg" http://127.0.0.1:8000/extract
-# {"success": true, "id": 1, "data": {"nome_empresa": "...", "whatsapp": "...", ...}}
+# {"success": true, "id": null, "cartao": {...}, "data": {...}, "fotos": {"frente": "fotos/...jpg", "verso": ""}, "avisos": []}
 ```
 
 > Upload sempre via **multipart (corpo HTTP)** — nunca base64 como argumento de linha de comando (lição "Argument list too long" do projeto anterior).
@@ -164,6 +171,8 @@ curl -F "image=@cartao.jpg" http://127.0.0.1:8000/extract
 cd leadscan
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r app/requirements.txt
+# pré-requisito do OCR local (sem ele o app continua de pé, mas só com a IA de visão):
+#   Debian/Ubuntu: sudo apt install tesseract-ocr tesseract-ocr-por
 export DATA_DIR=./data
 export OLLAMA_URL=http://localhost:11434/api/generate   # se Ollama local
 export ADMIN_PASSWORD_HASH="<hash bcrypt>" SESSION_SECRET="dev-secret"

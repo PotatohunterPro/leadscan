@@ -86,6 +86,11 @@
         if (s.modelos && s.modelos.length) {
           html += '<div class="status-item"><span class="rot">Modelos no Ollama</span><span class="mono">' + esc(s.modelos.join(", ")) + "</span></div>";
         }
+        html += '<div class="status-item"><span class="rot">Tesseract (OCR local)</span>' +
+          (s.tesseract_ok ? '<span class="ok">🟢 Disponível</span>' : '<span class="ruim">🔴 Não instalado no container</span>') + "</div>";
+        if (s.tesseract_idiomas) {
+          html += '<div class="status-item"><span class="rot">Idiomas do OCR</span><span class="mono">' + esc(s.tesseract_idiomas) + "</span></div>";
+        }
         html += '<div class="status-item"><span class="rot">Última extração com sucesso</span><span>' +
           (s.ultima_extracao ? esc(s.ultima_extracao) : "nenhuma ainda — tire uma foto real!") + "</span></div>";
         box.innerHTML = html;

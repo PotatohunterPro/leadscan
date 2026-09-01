@@ -4,6 +4,7 @@ funções CRUD simples e um schema explícito com coluna para cada campo do
 formulário de lead (mesmo modelo de dados do HubLead).
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -63,14 +64,52 @@ CREATE TABLE IF NOT EXISTS leads (
 );
 """
 
+# Informações do cartão: tabela SEPARADA, 1 por lead (lead_id UNIQUE).
+# O lead continua sendo UM registro só — o cartão é uma camada complementar,
+# nunca um segundo lead. Guardamos o JSON completo da análise (telefones,
+# redes, endereço, outras informações) + o texto do OCR bruto, para conferência.
+_SCHEMA_CARTAO = """
+CREATE TABLE IF NOT EXISTS lead_cartao (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER NOT NULL UNIQUE,
+    dados_json TEXT NOT NULL DEFAULT '{}',
+    ocr_texto TEXT NOT NULL DEFAULT '',
+    criado_em TEXT NOT NULL,
+    atualizado_em TEXT NOT NULL,
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+);
+"""
+
 
 def init_db() -> None:
-    """Cria diretórios e tabela se ainda não existirem (idempotente)."""
+    """Cria diretórios e tabelas se ainda não existirem (idempotente).
+
+    Também roda a migração das colunas de 'leads': bancos antigos ganham as
+    colunas novas com ALTER TABLE — nenhum dado é apagado ou reescrito.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     FOTOS_DIR.mkdir(parents=True, exist_ok=True)
     with _conexao() as con:
         con.execute(_SCHEMA)
+        con.execute(_SCHEMA_CARTAO)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lead_cartao_lead ON lead_cartao(lead_id)"
+        )
+        _migrar_colunas(con)
     logger.info("Banco pronto em %s", DB_PATH)
+
+
+def _migrar_colunas(con: sqlite3.Connection) -> None:
+    """Adiciona a 'leads' colunas de CAMPOS que ainda não existem."""
+    existentes = {
+        linha["name"] for linha in con.execute("PRAGMA table_info(leads)").fetchall()
+    }
+    for coluna in CAMPOS:
+        if coluna not in existentes:
+            logger.info("Migração: adicionando coluna %s em leads", coluna)
+            con.execute(
+                f"ALTER TABLE leads ADD COLUMN {coluna} TEXT NOT NULL DEFAULT ''"
+            )
 
 
 @contextmanager
@@ -164,6 +203,99 @@ def listar_leads(
     with _conexao() as con:
         linhas = con.execute(sql, params).fetchall()
         return [_para_dict(l) for l in linhas]
+
+
+# ------------------------------------------------------- informações do cartão
+
+def salvar_cartao(lead_id: int, info: dict) -> int:
+    """Grava (ou atualiza) as INFORMAÇÕES DO CARTÃO de um lead.
+
+    Não toca em nenhuma coluna de 'leads': o que o vendedor digitou continua
+    exatamente como estava. Se já existir cartão para o lead, ele é
+    substituído pela análise nova (continua sendo 1 cartão por lead).
+    """
+    if not info:
+        return 0
+    payload = json.dumps(info, ensure_ascii=False)
+    ocr_texto = str((info.get("ocr") or {}).get("texto", ""))
+    agora = agora_iso()
+    with _conexao() as con:
+        linha = con.execute(
+            "SELECT id FROM lead_cartao WHERE lead_id = ?", [lead_id]
+        ).fetchone()
+        if linha:
+            con.execute(
+                "UPDATE lead_cartao SET dados_json = ?, ocr_texto = ?, "
+                "atualizado_em = ? WHERE lead_id = ?",
+                [payload, ocr_texto, agora, lead_id],
+            )
+            return int(linha["id"])
+        cur = con.execute(
+            "INSERT INTO lead_cartao (lead_id, dados_json, ocr_texto, "
+            "criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?)",
+            [lead_id, payload, ocr_texto, agora, agora],
+        )
+        return int(cur.lastrowid)
+
+
+def buscar_cartao(lead_id: int) -> dict | None:
+    """Informações do cartão do lead (None se o lead não tiver cartão)."""
+    with _conexao() as con:
+        linha = con.execute(
+            "SELECT * FROM lead_cartao WHERE lead_id = ?", [lead_id]
+        ).fetchone()
+    if not linha:
+        return None
+    try:
+        dados = json.loads(linha["dados_json"] or "{}")
+    except json.JSONDecodeError:
+        logger.warning("JSON do cartão do lead %s corrompido", lead_id)
+        dados = {}
+    if not isinstance(dados, dict):
+        dados = {}
+    dados.setdefault("ocr", {})
+    if not dados["ocr"].get("texto"):
+        dados["ocr"]["texto"] = linha["ocr_texto"] or ""
+    dados["_meta"] = {
+        "id": linha["id"],
+        "lead_id": linha["lead_id"],
+        "criado_em": linha["criado_em"],
+        "atualizado_em": linha["atualizado_em"],
+    }
+    return dados
+
+
+def buscar_lead_completo(lead_id: int) -> dict | None:
+    """Lead + cartão no MESMO registro de resposta (chave 'cartao')."""
+    lead = buscar_lead(lead_id)
+    if lead is None:
+        return None
+    lead["cartao"] = buscar_cartao(lead_id)
+    return lead
+
+
+def leads_com_cartao(ids: list[int]) -> dict[int, dict]:
+    """Cartões de vários leads de uma vez (usado no painel/CSV)."""
+    if not ids:
+        return {}
+    marcadores = ",".join("?" * len(ids))
+    with _conexao() as con:
+        linhas = con.execute(
+            f"SELECT lead_id, dados_json FROM lead_cartao WHERE lead_id IN ({marcadores})",
+            list(ids),
+        ).fetchall()
+    saida: dict[int, dict] = {}
+    for linha in linhas:
+        try:
+            saida[int(linha["lead_id"])] = json.loads(linha["dados_json"] or "{}")
+        except json.JSONDecodeError:
+            continue
+    return saida
+
+
+def total_cartoes() -> int:
+    with _conexao() as con:
+        return int(con.execute("SELECT COUNT(*) FROM lead_cartao").fetchone()[0])
 
 
 def ultima_extracao_sucesso() -> str | None:

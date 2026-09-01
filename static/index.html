@@ -33,9 +33,10 @@
     background: var(--cartao); border: 1px solid var(--borda);
     border-radius: 14px; padding: 16px; margin-bottom: 16px;
   }
-  .cartao h2 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .cartao h2 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .cartao h2 .bot { background: var(--ia); color: #fff; font-size: 11px;
     padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .dica-secao { font-size: 12px; color: var(--texto-suave); margin: -8px 0 10px; }
   label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
   label .dica { font-weight: 400; color: var(--texto-suave); font-size: 12px; }
   input[type=text], input[type=tel], input[type=email], select, textarea {
@@ -45,8 +46,6 @@
   textarea { min-height: 80px; resize: vertical; }
   input:focus, select:focus, textarea:focus { outline: 2px solid #bfe3cc; border-color: var(--verde); }
   .req::after { content: " *"; color: var(--erro); }
-  .campo-ia { border-color: #d9c6ff; background: #faf7ff; }
-  .campo-ia:focus { border-color: var(--ia); outline-color: #e3d7ff; }
   .foto-box {
     border: 2px dashed var(--borda); border-radius: 12px; padding: 14px;
     text-align: center; cursor: pointer; background: #fafbfc; margin-bottom: 10px;
@@ -98,12 +97,39 @@
   footer { text-align: center; font-size: 12px; color: var(--texto-suave); margin-top: 20px; }
   details { margin-top: 8px; }
   summary { cursor: pointer; font-size: 13px; color: var(--texto-suave); }
+
+  /* 📇 INFORMAÇÕES DO CARTÃO — seção visualmente distinta (item 19 do V2) */
+  .secao-cartao-info { border: 1.5px solid #d9c6ff; background: #faf7ff; }
+  .secao-cartao-info h2 { color: var(--ia); }
+  .grupo-cartao { margin-bottom: 14px; }
+  .grupo-cartao .titulo { font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .4px; color: var(--ia); margin-bottom: 6px; }
+  .item-cartao { display: flex; align-items: center; gap: 10px; background: #fff;
+    border: 1px solid #ece7fa; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: 14px; }
+  .item-cartao .txt { flex: 1; min-width: 0; }
+  .item-cartao .rotulo { display: block; font-size: 11px; color: var(--texto-suave);
+    font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+  .item-cartao .valor { display: block; overflow-wrap: anywhere; margin-top: 1px; }
+  button.usar { background: var(--ia); color: #fff; border: none; border-radius: 8px;
+    padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    line-height: 1.3; white-space: normal; max-width: 200px; }
+  button.usar:hover { background: #6d28d9; }
+  .aviso-cartao { display: none; padding: 9px 11px; border-radius: 9px; font-size: 13px; margin-bottom: 10px; }
+  .aviso-cartao.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+  .aviso-cartao.atencao { display: block; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .aviso-cartao.erro { display: block; background: #fef2f2; border: 1px solid #fecaca; color: var(--erro); }
+  .aviso-ia { background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 12px; }
+  .ocr-bloco { margin: 8px 0; }
+  .ocr-bloco b { font-size: 11px; color: var(--texto-suave); }
+  pre.ocr { background: #1f2430; color: #d1fae5; font-size: 12px; line-height: 1.5;
+    padding: 10px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🃏 LeadScan</h1>
-  <p>Tire uma foto do cartão de visita — a IA preenche o resto</p>
+  <p>Tire uma foto do cartão — a IA lê as informações e você decide o que usar no lead</p>
 </header>
 
 <main>
@@ -125,18 +151,25 @@
     <div class="aviso" id="aviso"></div>
   </section>
 
+  <!-- ============ INFORMAÇÕES DO CARTÃO (item 3/5/19 do V2) ============ -->
+  <section class="cartao secao-cartao-info" id="secao-cartao-info" style="display:none">
+    <h2>2 · 📇 Informações do cartão <span class="bot">🤖 Extraído automaticamente da foto</span></h2>
+    <div id="conteudo-cartao"></div>
+  </section>
+
   <!-- ============ FORMULÁRIO ============ -->
   <section class="cartao" id="secao-form" style="display:none">
-    <h2>2 · Dados do lead <span class="badge">🤖 = lido da foto</span></h2>
+    <h2>3 · 👤 Dados do lead</h2>
+    <p class="dica-secao">Informações coletadas pelo vendedor — o cartão nunca substitui estes campos</p>
 
     <label class="req">Nome da Loja / Fantasia</label>
-    <input type="text" id="nome_empresa" class="campo-ia" placeholder="Ex.: Padaria Pão Dourado">
+    <input type="text" id="nome_empresa" placeholder="Ex.: Padaria Pão Dourado">
 
-    <label>Endereço / Bairro / Cidade <span class="dica">🤖 IA</span></label>
-    <input type="text" id="endereco" class="campo-ia" placeholder="Rua, número, bairro">
+    <label>Endereço / Bairro / Cidade</label>
+    <input type="text" id="endereco" placeholder="Rua, número, bairro">
 
     <label>Nome do Contato <span class="req"></span></label>
-    <input type="text" id="nome_contato" class="campo-ia" placeholder="Ex.: Maria Silva">
+    <input type="text" id="nome_contato" placeholder="Ex.: Maria Silva">
 
     <label>Cargo</label>
     <select id="cargo">
@@ -151,7 +184,7 @@
     </select>
 
     <label class="req">WhatsApp do Contato</label>
-    <input type="tel" id="whatsapp" class="campo-ia" placeholder="(11) 99999-9999">
+    <input type="tel" id="whatsapp" placeholder="(11) 99999-9999">
 
     <label>Aceita demonstração?</label>
     <select id="aceita_demonstracao">
@@ -167,13 +200,13 @@
     <details>
       <summary>Contato extra e dados da loja (opcional)</summary>
 
-      <label>Telefone fixo / loja <span class="dica">🤖 IA</span></label>
-      <input type="text" id="telefone" class="campo-ia" placeholder="(11) 3333-4444">
+      <label>Telefone fixo / loja</label>
+      <input type="text" id="telefone" placeholder="(11) 3333-4444">
 
-      <label>E-mail da loja <span class="dica">🤖 IA</span></label>
-      <input type="email" id="email" class="campo-ia" placeholder="contato@loja.com.br">
+      <label>E-mail da loja</label>
+      <input type="email" id="email" placeholder="contato@loja.com.br">
 
-      <label>Segmento <span class="dica">🤖 IA</span></label>
+      <label>Segmento</label>
       <select id="ramo_atividade">
         <option value="">— selecionar —</option>
         <option>Varejo</option>
@@ -229,11 +262,11 @@
     </details>
 
     <details>
-      <summary>Outros dados detectados pela IA</summary>
-      <label>Site <span class="dica">🤖 IA</span></label>
-      <input type="text" id="site" class="campo-ia" placeholder="www.loja.com.br">
-      <label>Redes sociais <span class="dica">🤖 IA</span></label>
-      <input type="text" id="redes_sociais" class="campo-ia" placeholder="@loja, facebook.com/loja">
+      <summary>Site e redes sociais</summary>
+      <label>Site</label>
+      <input type="text" id="site" placeholder="www.loja.com.br">
+      <label>Redes sociais</label>
+      <input type="text" id="redes_sociais" placeholder="@loja, facebook.com/loja">
     </details>
 
     <div class="linha-botoes">
@@ -254,10 +287,19 @@
 <script>
 "use strict";
 (function () {
-  var estado = { leadId: null, ddi: "55" };
+  var estado = { leadId: null, ddi: "55", cartao: null, caminhos: null };
   var fotos = { frente: null, verso: null };
 
   var $ = function (id) { return document.getElementById(id); };
+
+  // rótulos curtos exibidos nos itens da seção do cartão (mapeamento campo→campo do lead)
+  var ROTULOS_CAMPO = {
+    nome_empresa: "Empresa", ramo_atividade: "Segmento",
+    nome_contato: "Contato", cargo: "Cargo",
+    whatsapp: "WhatsApp", telefone: "Telefone",
+    email: "E-mail", site: "Site",
+    redes_sociais: "Redes sociais", endereco: "Endereço", cidade: "Cidade"
+  };
 
   // ---------- captura de fotos ----------
   function limparPreviews() { $("previews").innerHTML = ""; }
@@ -267,6 +309,8 @@
     if (!arquivo) return;
     // novo cartão fotografado = novo lead (evita sobrescrever o anterior e acumular previews)
     estado.leadId = null;
+    estado.cartao = null;
+    estado.caminhos = null;
     fotos.verso = null;
     $("foto-verso-box").classList.remove("ativo");
     limparPreviews();
@@ -275,6 +319,7 @@
     aviso.textContent = "";
     fotos.frente = arquivo;
     $("foto-frente-box").classList.add("ativo");
+    $("secao-cartao-info").style.display = "none";
     adicionarPreview(arquivo, "frente");
     processarFoto(arquivo);
   }
@@ -285,6 +330,8 @@
     fotos.verso = arquivo;
     $("foto-verso-box").classList.add("ativo");
     adicionarPreview(arquivo, "verso");
+    // frente + verso = o MESMO cartão (item 7): re-analisa combinando as duas
+    if (fotos.frente) processarFoto(fotos.frente);
   }
 
   function adicionarPreview(arquivo, lado) {
@@ -295,7 +342,9 @@
   }
 
   // ---------- extração com IA ----------
+  var versaoExtracao = 0;   // só a extração mais recente pode aplicar o resultado
   function processarFoto(arquivo) {
+    var minha = ++versaoExtracao;
     mostrarAviso("", "");
     var spinner = $("spinner");
     spinner.classList.add("visivel");
@@ -303,57 +352,186 @@
 
     var fd = new FormData();
     fd.append("image", arquivo);
+    if (fotos.verso) fd.append("verso", fotos.verso);
 
     fetch("/extract", { method: "POST", body: fd })
       .then(function (resp) { return resp.json().then(function (dados) { return { ok: resp.ok, dados: dados }; }); })
       .then(function (r) {
+        if (minha !== versaoExtracao) return;  // já começou uma extração mais nova
         spinner.classList.remove("visivel");
         if (r.ok && r.dados.success) {
-          estado.leadId = r.dados.id;
-          preencherFormulario(r.dados.data);
-          mostrarAviso("Lead salvo (#" + estado.leadId + "). Confira os dados e complete os campos manuais.", "ok");
+          // regra 9: a análise NÃO cria lead nem preenche o formulário — só
+          // preenche a seção 📇; quem conclui é o 💾 Salvar Lead.
+          estado.leadId = null;
+          estado.cartao = r.dados.cartao || null;
+          estado.caminhos = r.dados.fotos || {};
+          renderizarCartao(estado.cartao);
+          mostrarAviso("✅ Cartão lido — confira as informações abaixo e use [ Usar no Lead ] quando quiser copiar.", "ok");
           $("secao-form").style.display = "block";
-          $("secao-form").scrollIntoView({ behavior: "smooth" });
+          $("secao-cartao-info").scrollIntoView({ behavior: "smooth" });
         } else {
           mostrarAviso("Não consegui ler o cartão: " + (r.dados.error || "erro desconhecido"), "erro");
         }
       })
       .catch(function (erro) {
+        if (minha !== versaoExtracao) return;
         spinner.classList.remove("visivel");
         mostrarAviso("Falha na comunicação com o servidor: " + erro, "erro");
       })
-      .finally(function () { $("btn-whatsapp").disabled = false; });
+      .finally(function () { if (minha === versaoExtracao) $("btn-whatsapp").disabled = false; });
   }
 
-  // ---------- preenchimento do formulário ----------
-  function preencherFormulario(d) {
-    d = d || {};
-    var mapa = ["nome_empresa", "endereco", "nome_contato", "whatsapp", "telefone", "email", "site", "redes_sociais", "anotacoes"];
-    mapa.forEach(function (campo) {
-      var el = $(campo);
-      if (el && d[campo]) el.value = d[campo];
-    });
-    var end = $("endereco");
-    if (d.cidade && end.value.indexOf(d.cidade) === -1) {
-      end.value = (end.value ? end.value + " — " : "") + d.cidade;
+  // ---------- seção 📇 INFORMAÇÕES DO CARTÃO ----------
+  function tipoTelefone(c, valor) {
+    var alvo = String(valor || "").replace(/\D/g, "");
+    if (!alvo) return "";
+    var t = (c.telefones || []).filter(function (x) {
+      return String(x.numero || "").replace(/\D/g, "") === alvo;
+    })[0];
+    return (t && t.tipo) ? t.tipo : "";
+  }
+
+  function itemCartao(rotulo, valor, campo, botaoTexto, badge) {
+    var h = '<div class="item-cartao"><div class="txt"><span class="rotulo">' + esc(rotulo) + "</span>" +
+      '<span class="valor">' + esc(valor);
+    if (badge) h += ' <span class="badge">' + esc(badge) + "</span>";
+    h += "</span></div>";
+    if (botaoTexto) {
+      h += '<button class="usar" data-campo="' + esc(campo) + '" data-valor="' + esc(valor) + '">' +
+        esc(botaoTexto) + "</button>";
+    }
+    h += "</div>";
+    return h;
+  }
+
+  function renderizarCartao(c) {
+    var box = $("secao-cartao-info");
+    if (!c) { box.style.display = "none"; return; }
+    box.style.display = "block";
+
+    var h = '<div id="aviso-cartao" class="aviso-cartao"></div>';
+    if (c.avisos && c.avisos.length) {
+      h += '<div class="aviso-ia">' + c.avisos.map(esc).join("<br>") + "</div>";
     }
 
-    // segmento: casa com uma opção; senão usa "Outro" + texto livre
-    if (d.ramo_atividade) {
-      var valor = d.ramo_atividade.trim();
-      var select = $("ramo_atividade");
-      var achou = false;
-      for (var i = 0; i < select.options.length; i++) {
-        if (select.options[i].value.toLowerCase() === valor.toLowerCase()) {
-          select.value = select.options[i].value; achou = true; break;
-        }
-      }
-      if (!achou) {
-        select.value = "Outro";
-        $("ramo_atividade_outro").style.display = "block";
-        $("ramo_atividade_outro").value = valor;
+    // blocos montados a partir de cartao.sugestoes (pares campo→valor)
+    var sugs = c.sugestoes || [];
+    var grupos = [
+      { titulo: "Empresa", campos: ["nome_empresa", "ramo_atividade"] },
+      { titulo: "Pessoa", campos: ["nome_contato", "cargo"] },
+      { titulo: "Telefones", campos: ["whatsapp", "telefone"] },
+      { titulo: "E-mails e sites", campos: ["email", "site"] },
+      { titulo: "Redes sociais", campos: ["redes_sociais"] },
+      { titulo: "Endereço", campos: ["endereco", "cidade"] }
+    ];
+    grupos.forEach(function (g) {
+      var itens = sugs.filter(function (s) { return g.campos.indexOf(s.campo) !== -1; });
+      if (!itens.length) return;
+      h += '<div class="grupo-cartao"><div class="titulo">' + esc(g.titulo) + "</div>";
+      itens.forEach(function (s) {
+        var badge = (s.campo === "whatsapp" || s.campo === "telefone") ? tipoTelefone(c, s.valor) : "";
+        h += itemCartao(ROTULOS_CAMPO[s.campo] || s.campo, s.valor, s.campo, s.rotulo, badge);
+      });
+      h += "</div>";
+    });
+
+    // detectado mas sem campo próprio no formulário (itens 3/14 do V2)
+    var extras = [];
+    if (c.empresa && c.empresa.nome_fantasia && c.empresa.nome_fantasia !== (c.empresa.nome || "")) {
+      extras.push({ rotulo: "Nome fantasia", valor: c.empresa.nome_fantasia });
+    }
+    if (c.documentos && c.documentos.cnpj) extras.push({ rotulo: "CNPJ", valor: c.documentos.cnpj });
+    (c.outras_informacoes || []).forEach(function (o) {
+      extras.push({ rotulo: "Outra informação", valor: (o && o.texto) || o });
+    });
+    if (extras.length) {
+      h += '<div class="grupo-cartao"><div class="titulo">Outras informações detectadas</div>';
+      extras.forEach(function (x) { h += itemCartao(x.rotulo, x.valor, null, null, null); });
+      h += "</div>";
+    }
+
+    // "[ Ver texto original ]" (item 15)
+    h += '<details class="ocr-detalhes"><summary>[ Ver texto original ]</summary>';
+    var ocr = c.ocr || {};
+    if (!ocr.disponivel) {
+      h += '<div class="vazio">OCR indisponível neste servidor — as informações vieram apenas da análise visual da IA.</div>';
+    } else {
+      if (ocr.frente) h += '<div class="ocr-bloco"><b>— FRENTE —</b><pre class="ocr">' + esc(ocr.frente) + "</pre></div>";
+      if (ocr.verso) h += '<div class="ocr-bloco"><b>— VERSO —</b><pre class="ocr">' + esc(ocr.verso) + "</pre></div>";
+      if (!ocr.frente && !ocr.verso) h += '<div class="vazio">Nenhum texto foi lido pelo OCR.</div>';
+    }
+    h += "</details>";
+
+    $("conteudo-cartao").innerHTML = h;
+  }
+
+  // ---------- [ Usar no Lead ] (item 5) ----------
+  function avisarCartao(msg, tipo) {
+    var el = $("aviso-cartao");
+    if (!el) return;
+    el.className = "aviso-cartao " + (tipo || "");
+    el.textContent = msg;
+  }
+
+  function setarSelect(select, valor) {
+    var alvo = String(valor).trim().toLowerCase();
+    for (var i = 0; i < select.options.length; i++) {
+      var op = select.options[i].value.toLowerCase();
+      if (op === alvo || (alvo.length > 3 && (op.indexOf(alvo) !== -1 || alvo.indexOf(op) !== -1))) {
+        select.value = select.options[i].value;
+        return true;
       }
     }
+    return false;
+  }
+
+  function usarNoLead(campo, valor) {
+    if (!campo || !valor) return;
+    if (campo === "cidade") {
+      // não existe input de cidade — concatena no endereço (como sempre foi)
+      var end = $("endereco");
+      var atual = (end.value || "").trim();
+      if (atual.indexOf(valor) !== -1) {
+        avisarCartao("A cidade já consta no campo endereço.", "atencao");
+        return;
+      }
+      end.value = atual ? atual + " — " + valor : valor;
+      avisarCartao("Cidade adicionada ao endereço: " + valor, "ok");
+      return;
+    }
+    if (campo === "cargo") {
+      var selCargo = $("cargo");
+      if (setarSelect(selCargo, valor)) {
+        avisarCartao("Cargo copiado para o lead: " + valor, "ok");
+      } else {
+        avisarCartao("Cargo \"" + valor + "\" não está na lista — preencha manualmente.", "atencao");
+      }
+      return;
+    }
+    if (campo === "ramo_atividade") {
+      var selRamo = $("ramo_atividade");
+      if (setarSelect(selRamo, valor)) {
+        avisarCartao("Segmento copiado para o lead: " + valor, "ok");
+      } else {
+        if (selRamo.value !== "Outro") selRamo.value = "Outro";
+        $("ramo_atividade_outro").style.display = "block";
+        $("ramo_atividade_outro").value = valor;
+        avisarCartao("Segmento copiado como \"Outro\": " + valor, "ok");
+      }
+      return;
+    }
+    var el = $(campo);
+    if (!el) {
+      avisarCartao("Campo \"" + campo + "\" não encontrado no formulário.", "erro");
+      return;
+    }
+    // regra 4: NUNCA sobrescreve o que o vendedor digitou
+    if ((el.value || "").trim()) {
+      avisarCartao("Campo já preenchido — apague o valor antes de copiar.", "atencao");
+      return;
+    }
+    el.value = valor;
+    avisarCartao("Copiado para o lead: " + valor, "ok");
   }
 
   // ---------- persistência ----------
@@ -375,8 +553,16 @@
       // garante que o erro vira rejeição de Promise (o .catch do chamador funciona)
       return Promise.reject(e);
     }
-    if (fotos.frente) fd.append("foto_frente", fotos.frente);
-    if (fotos.verso) fd.append("foto_verso", fotos.verso);
+    // 📇 INFORMAÇÕES DO CARTÃO: salva junto no MESMO lead (itens 17/18)
+    if (estado.cartao) fd.append("cartao_json", JSON.stringify(estado.cartao));
+    // reaproveita os JPEGs já processados pelo /extract (evita duplicar arquivos)
+    if (estado.caminhos) {
+      if (estado.caminhos.frente) fd.append("foto_frente_path", estado.caminhos.frente);
+      if (estado.caminhos.verso) fd.append("foto_verso_path", estado.caminhos.verso);
+    }
+    // arquivos novos só quando o vendedor re-selecionou depois do extract
+    if (fotos.frente && !(estado.caminhos && estado.caminhos.frente)) fd.append("foto_frente", fotos.frente);
+    if (fotos.verso && !(estado.caminhos && estado.caminhos.verso)) fd.append("foto_verso", fotos.verso);
     return fetch("/leads", { method: "POST", body: fd })
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -559,6 +745,12 @@
   $("possui_sistema").addEventListener("change", mostrarBlocoSistema);
   $("ramo_atividade").addEventListener("change", function () {
     $("ramo_atividade_outro").style.display = this.value === "Outro" ? "block" : "none";
+  });
+  // "[ Usar no Lead ]" — delegação de eventos (os itens são re-renderizados)
+  $("secao-cartao-info").addEventListener("click", function (e) {
+    var btn = e.target.closest("button.usar");
+    if (!btn) return;
+    usarNoLead(btn.dataset.campo, btn.dataset.valor);
   });
   $("btn-salvar").addEventListener("click", function () {
     if (!validarFormulario()) return;

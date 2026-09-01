@@ -140,3 +140,155 @@ async def listar_modelos() -> list[str]:
         resp.raise_for_status()
         modelos = resp.json().get("models", [])
         return [m.get("name", "") for m in modelos]
+
+# --------------------------------------------------------------- cartão (novo)
+
+# Campos que o modelo tenta preencher na análise do cartão. Continua sendo o
+# MESMO modelo pequeno (LFM2.5-VL-450M): o prompt é curto de propósito e a
+# validação pesada acontece depois, em app/validadores.py.
+CAMPOS_CARTAO = [
+    "nome_empresa",
+    "nome_fantasia",
+    "nome_contato",
+    "cargo",
+    "telefones",
+    "whatsapp",
+    "email",
+    "site",
+    "endereco",
+    "bairro",
+    "cidade",
+    "uf",
+    "cep",
+    "redes_sociais",
+    "ramo_atividade",
+    "outras_informacoes",
+]
+
+PROMPT_CARTAO = (
+    "Você está lendo a foto de um cartão de visita brasileiro (frente e, se "
+    "houver, verso da MESMA empresa). Responda SOMENTE com um objeto JSON, sem "
+    "explicações, usando exatamente estas chaves: nome_empresa, nome_fantasia, "
+    "nome_contato, cargo, telefones, whatsapp, email, site, endereco, bairro, "
+    "cidade, uf, cep, redes_sociais, ramo_atividade, outras_informacoes.\n"
+    "Regras: 'telefones' e 'outras_informacoes' são listas; copie os textos "
+    "exatamente como aparecem; NUNCA invente ou complete números; use string "
+    "vazia quando não encontrar; em 'outras_informacoes' coloque frases do "
+    "cartão que não cabem nos outros campos (slogan, 'desde 1998', "
+    "'representante', horários etc.)."
+)
+
+
+def _texto_ocr_para_prompt(texto_ocr: str, limite: int = 1200) -> str:
+    texto = (texto_ocr or "").strip()
+    if not texto:
+        return ""
+    if len(texto) > limite:
+        texto = texto[:limite] + "…"
+    return (
+        "\n\nO OCR leu o seguinte texto nesta imagem (use como apoio, ele é "
+        "confiável para números e endereços):\n" + texto
+    )
+
+
+async def extrair_dados_cartao(imagens: list[bytes], texto_ocr: str = "") -> dict:
+    """Interpretação visual do cartão pelo modelo local.
+
+    Recebe a frente (e o verso, quando houver) como UM cartão só e o texto do
+    OCR como apoio. Devolve o JSON já normalizado (strings/listas), sem
+    validar números — quem valida é app/validadores.py.
+    """
+    imgs_b64 = [base64.b64encode(im).decode("ascii") for im in imagens]
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": PROMPT_CARTAO + _texto_ocr_para_prompt(texto_ocr),
+        "images": imgs_b64,
+        "stream": False,
+        "options": {"temperature": 0.1},
+    }
+    logger.info(
+        "Chamando Ollama (cartão) modelo=%s imagens=%d ocr=%d chars",
+        OLLAMA_MODEL, len(imagens), len(texto_ocr or ""),
+    )
+    async with httpx.AsyncClient(timeout=TIMEOUT_SEGUNDOS) as client:
+        resp = await client.post(OLLAMA_URL, json=payload)
+        resp.raise_for_status()
+        texto = resp.json().get("response", "")
+    logger.info("Ollama respondeu (%d caracteres)", len(texto))
+    return normalizar_json_cartao(extrair_json_bruto(texto))
+
+
+def extrair_json_bruto(texto: str) -> dict:
+    """Igual a extrair_json_da_resposta, mas sem forçar os campos antigos.
+
+    Mantida separada para não mexer no contrato de /extract legado.
+    """
+    if not texto or not texto.strip():
+        raise ValueError("Ollama retornou resposta vazia")
+    candidato = texto.strip()
+    m = _FENCE_RE.search(candidato)
+    if m:
+        candidato = m.group(1).strip()
+    try:
+        dados = json.loads(candidato)
+    except json.JSONDecodeError:
+        inicio, fim = candidato.find("{"), candidato.rfind("}")
+        if inicio != -1 and fim > inicio:
+            try:
+                dados = json.loads(candidato[inicio : fim + 1])
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Resposta do Ollama não é JSON válido: {exc}"
+                ) from exc
+        else:
+            trecho = texto[:200] if texto.strip() else "<vazio>"
+            raise ValueError(
+                "Resposta do Ollama não contém um objeto JSON: " + trecho
+            )
+    if not isinstance(dados, dict):
+        raise ValueError(
+            "Resposta do Ollama não é um objeto JSON "
+            f"(recebido: {type(dados).__name__})"
+        )
+    return dados
+
+
+def normalizar_json_cartao(dados: dict) -> dict:
+    """Normaliza o JSON do modelo: strings limpas e listas de strings.
+
+    O modelo pequeno erra o formato com frequência (manda string onde devia
+    ser lista, dicionário aninhado, null...). Aqui isso vira algo previsível
+    em vez de exceção.
+    """
+    saida: dict = {}
+    for chave, valor in (dados or {}).items():
+        chave = str(chave).strip()
+        if isinstance(valor, list):
+            saida[chave] = [
+                str(v).strip() for v in _achatar(valor) if str(v).strip()
+            ]
+        elif isinstance(valor, dict):
+            saida[chave] = [
+                f"{k}: {v}".strip() for k, v in valor.items() if str(v).strip()
+            ]
+        elif valor is None:
+            saida[chave] = ""
+        else:
+            saida[chave] = str(valor).strip()
+    for campo in CAMPOS_CARTAO:
+        if campo not in saida:
+            saida[campo] = [] if campo in ("telefones", "outras_informacoes", "redes_sociais") else ""
+    return saida
+
+
+def _achatar(valores: list) -> list:
+    plano: list = []
+    for v in valores:
+        if isinstance(v, list):
+            plano.extend(_achatar(v))
+        elif isinstance(v, dict):
+            plano.extend(str(x) for x in v.values())
+        else:
+            plano.append(v)
+    return plano
+

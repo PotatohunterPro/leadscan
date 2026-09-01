@@ -9,9 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# curl é usado pelo healthcheck do docker-compose
+# curl é usado pelo healthcheck do docker-compose; tesseract-ocr-por roda o OCR local (item 10 do V2)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl tesseract-ocr tesseract-ocr-por \
     && rm -rf /var/lib/apt/lists/*
 
 COPY app/requirements.txt /app/requirements.txt

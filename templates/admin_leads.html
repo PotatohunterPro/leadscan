@@ -172,6 +172,8 @@
           var valor = l[chave];
           if (valor) h += '<div class="campo"><b>' + esc(ROTULOS[chave]) + '</b><span>' + esc(valor) + "</span></div>";
         });
+        // 📇 INFORMAÇÕES DO CARTÃO (item 24 do V2) — camada complementar do lead
+        if (l.cartao) h += cartaoHtml(l.cartao);
         $("modal").innerHTML = h;
         $("modal-fundo").classList.add("aberto");
         $("modal").querySelector(".fechar").addEventListener("click", fechar);
@@ -181,6 +183,42 @@
         $("modal-fundo").classList.add("aberto");
         $("modal").querySelector(".fechar").addEventListener("click", fechar);
       });
+  }
+  function cartaoHtml(c) {
+    c = c || {};
+    var h = '<div style="margin-top:16px;padding-top:12px;border-top:2px dashed #d9c6ff">' +
+      '<h3 style="color:#7c3aed;font-size:14px;margin:0 0 2px">📇 Informações do cartão</h3>' +
+      '<div style="font-size:11px;color:#667085;margin-bottom:8px">🤖 Extraído automaticamente da foto</div>';
+    function campo(rotulo, valor) {
+      if (!valor) return "";
+      return '<div class="campo"><b>' + esc(rotulo) + '</b><span>' + esc(valor) + "</span></div>";
+    }
+    h += campo("Empresa", c.empresa && c.empresa.nome);
+    h += campo("Nome fantasia", c.empresa && c.empresa.nome_fantasia);
+    h += campo("Segmento", c.empresa && c.empresa.ramo_atividade);
+    h += campo("Contato", c.pessoa && c.pessoa.nome);
+    h += campo("Cargo", c.pessoa && c.pessoa.cargo);
+    (c.telefones || []).forEach(function (t) {
+      h += campo("Telefone (" + (t.tipo || "?") + ")", t.numero);
+    });
+    (c.emails || []).forEach(function (e) { h += campo("E-mail", e.valor); });
+    (c.sites || []).forEach(function (s) { h += campo("Site", s.valor); });
+    (c.redes_sociais || []).forEach(function (r) { h += campo("Rede (" + (r.rede || "?") + ")", r.valor); });
+    if (c.endereco && c.endereco.texto) h += campo("Endereço", c.endereco.texto);
+    h += campo("CNPJ", c.documentos && c.documentos.cnpj);
+    (c.outras_informacoes || []).forEach(function (o) {
+      h += campo("Outra informação", (o && o.texto) || o);
+    });
+    // item 15: texto OCR original
+    var ocr = c.ocr || {};
+    if (ocr.disponivel && (ocr.frente || ocr.verso)) {
+      h += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:#667085">[ Ver texto original ]</summary>';
+      if (ocr.frente) h += '<pre style="background:#1f2430;color:#d1fae5;font-size:11px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px">' + esc(ocr.frente) + "</pre>";
+      if (ocr.verso) h += '<pre style="background:#1f2430;color:#d1fae5;font-size:11px;padding:8px;border-radius:6px;white-space:pre-wrap;margin-top:6px">' + esc(ocr.verso) + "</pre>";
+      h += "</details>";
+    }
+    h += "</div>";
+    return h;
   }
   function fechar() { $("modal-fundo").classList.remove("aberto"); }
 
