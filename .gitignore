@@ -14,3 +14,9 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# runner local de testes (sandbox) — diretórios temporários
+.test_tmp/
+
+# material de referência (AGPLv3) — NÃO versionar nem copiar código
+SuiteCRM-7.15.2/

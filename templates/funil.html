@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LeadScan — Funil de Vendas</title>
+<style>
+  :root {
+    /* paleta neutra de base (cinzas quentes) — cor de destaque reservada
+       só para "precisa de atenção agora". Ferramenta, não vitrine. */
+    --fundo: #f5f4f2;
+    --cartao: #ffffff;
+    --borda: #e4e1dc;
+    --texto: #26231f;
+    --texto-suave: #6f6a63;
+    --coluna-bg: #edeae5;
+    --destaque: #b45309;      /* âmbar — única cor de atenção */
+    --destaque-fundo: #fdf6ec;
+    --ok: #166534;
+    --erro: #b91c1c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--fundo); color: var(--texto); padding-bottom: 60px; font-size: 14px; }
+  header { background: #26231f; color: #fff; padding: 12px 20px;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header nav a { color: #cfcac2; text-decoration: none; font-size: 13px; margin-left: 14px; font-weight: 600; }
+  header nav a:hover { color: #fff; }
+  main { max-width: 1500px; margin: 0 auto; padding: 14px; }
+  .painel { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px;
+    padding: 12px; margin-bottom: 12px; }
+  .metricas { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip { background: var(--coluna-bg); border-radius: 6px; padding: 5px 10px; font-size: 13px;
+    font-weight: 600; color: var(--texto-suave); }
+  .chip b { color: var(--texto); }
+
+  /* filtros — chips ligáveis (respondem "o que eu faço agora?") */
+  .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tgl { border: 1px solid var(--borda); background: #fff; color: var(--texto-suave);
+    border-radius: 6px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .tgl.on { background: var(--texto); border-color: var(--texto); color: #fff; }
+  select, input[type=text], input[type=search], input[type=date], input[type=number], input[type=tel], textarea {
+    padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; font-size: 14px;
+    background: #fff; color: var(--texto); font-family: inherit; }
+  textarea { resize: vertical; }
+  button { padding: 8px 14px; border: none; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .primario { background: var(--texto); color: #fff; }
+  .primario:hover { background: #403c36; }
+  .secundario { background: var(--coluna-bg); color: var(--texto); }
+  .perigo { background: #fff; color: var(--erro); border: 1px solid var(--erro); }
+  button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--destaque); outline-offset: 2px; }
+  .usuario-logado { margin-left: auto; font-size: 13px; color: var(--texto-suave); font-weight: 600; }
+
+  /* kanban */
+  .kanban { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+  .coluna { background: var(--coluna-bg); border-radius: 8px; padding: 8px; min-width: 240px; flex: 1 0 240px; }
+  .coluna h3 { font-size: 13px; display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px; }
+  .coluna h3 .cont { background: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; color: var(--texto-suave); }
+  .coluna .cards { display: flex; flex-direction: column; gap: 6px; min-height: 48px; }
+  .coluna.over { outline: 2px dashed var(--destaque); outline-offset: -2px; }
+  .card-lead { background: #fff; border: 1px solid var(--borda); border-radius: 8px;
+    padding: 9px 10px; cursor: pointer; }
+  .card-lead:hover { border-color: var(--texto-suave); }
+  /* atenção: uma linha sutil no card, não o card inteiro vermelho */
+  .card-lead.acao-atrasada { border-left: 3px solid var(--destaque); }
+  .card-topo { display: flex; gap: 8px; align-items: center; }
+  .card-topo img { width: 38px; height: 38px; object-fit: cover; border-radius: 6px;
+    border: 1px solid var(--borda); flex-shrink: 0; }
+  .card-topo .nomes { min-width: 0; }
+  .card-topo .nome { font-size: 13.5px; font-weight: 700; line-height: 1.25;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-topo .sub { font-size: 12px; color: var(--texto-suave); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-rodape { display: flex; gap: 6px; align-items: baseline; margin-top: 6px; flex-wrap: wrap;
+    font-size: 11.5px; color: var(--texto-suave); }
+  .tempo { font-variant-numeric: tabular-nums; }
+  /* parado há mais de DIAS_ESTAGNADO: destaque discreto (peso/cor, não ícone piscando) */
+  .card-lead.estagnado .tempo { font-weight: 800; color: var(--texto); }
+  .tempo.atrasado { color: var(--destaque); font-weight: 700; }
+  .card-valor { margin-left: auto; font-weight: 700; color: var(--texto); font-variant-numeric: tabular-nums; }
+  .vazio-coluna { color: var(--texto-suave); font-size: 12px; padding: 6px 2px; }
+  .vazio-geral { padding: 28px 12px; text-align: center; color: var(--texto-suave); }
+  .vazio-geral a, .vazio-geral b { color: var(--texto); }
+
+  /* seletor de estágio no mobile (colunas espremidas forçam zoom) */
+  .estagio-mobile { display: none; margin-bottom: 10px; width: 100%; }
+  @media (max-width: 700px) {
+    .estagio-mobile { display: block; }
+    .kanban { flex-direction: column; overflow-x: visible; }
+    .coluna { min-width: 0; width: 100%; flex: none; }
+    .coluna.so-mobile-hidden { display: none; }
+  }
+
+  /* modal */
+  .modal-fundo { display: none; position: fixed; inset: 0; background: rgba(30,27,22,.55);
+    align-items: flex-end; justify-content: center; z-index: 50; }
+  .modal-fundo.aberto { display: flex; }
+  .modal { background: #fff; border-radius: 12px 12px 0 0; max-width: 660px; width: 100%;
+    max-height: 92vh; overflow-y: auto; padding: 16px; }
+  @media (min-width: 640px) {
+    .modal-fundo { align-items: center; padding: 16px; }
+    .modal { border-radius: 10px; }
+  }
+  .modal h2 { font-size: 16px; margin-bottom: 2px; }
+  .modal .sub { color: var(--texto-suave); font-size: 12px; margin-bottom: 10px; }
+  .modal .fechar { float: right; background: var(--coluna-bg); border: none; border-radius: 6px;
+    padding: 7px 11px; cursor: pointer; font-weight: 700; font-size: 13px; }
+
+  /* ações rápidas — topo, sempre visível */
+  .acoes-rapidas { position: sticky; top: -16px; background: #fff; padding: 8px 0;
+    display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--borda); z-index: 2; }
+  .acoes-rapidas a.btn, .acoes-rapidas button { flex: 1; min-width: 110px; padding: 10px 8px;
+    border: 1px solid var(--borda); border-radius: 6px; background: var(--coluna-bg);
+    font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--texto); }
+  .acoes-rapidas a.btn:hover, .acoes-rapidas button:hover { border-color: var(--texto-suave); }
+
+  .bloco { border-top: 1px solid var(--borda); margin-top: 12px; padding-top: 10px; }
+  .bloco h3 { font-size: 14px; margin-bottom: 6px; }
+  .campo { margin-bottom: 6px; }
+  .campo b { display: block; font-size: 11px; text-transform: uppercase; color: var(--texto-suave); }
+  .campo span { font-size: 14px; overflow-wrap: anywhere; }
+  .linha-campo { display: flex; justify-content: space-between; gap: 10px; font-size: 13px;
+    border-bottom: 1px dotted var(--borda); padding: 3px 0; }
+  .linha-campo b { color: var(--texto-suave); font-weight: 600; white-space: nowrap; }
+  .linha-campo span { text-align: right; overflow-wrap: anywhere; }
+  .bloco label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 3px; color: var(--texto-suave); }
+  .bloco textarea, .bloco input[type=text], .bloco input[type=number], .bloco select {
+    width: 100%; }
+  .bloco textarea { min-height: 52px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; font-weight: 600; }
+  .check input { width: 18px; height: 18px; }
+  .linha { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .linha button, .linha a.btn { flex: 1; min-width: 130px; padding: 10px 12px; border: none;
+    border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; text-align: center;
+    text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--texto); color: #fff; }
+
+  /* timeline — mais recente primeiro, ícone por tipo, status visual (V3) */
+  .timeline { list-style: none; margin-top: 6px; }
+  .timeline li { position: relative; padding: 0 0 10px 22px; font-size: 13px;
+    border-left: 2px solid var(--borda); margin-left: 6px; }
+  .timeline li::before { content: ""; position: absolute; left: -6px; top: 4px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--texto-suave); }
+  .timeline li.st-agendada::before { background: #fff; border: 2px solid var(--destaque); }
+  .timeline li.st-realizada::before { background: var(--ok); }
+  .timeline li.st-cancelada { opacity: .55; }
+  .timeline li.st-cancelada::before { background: var(--borda); }
+  .timeline li .quando { color: var(--texto-suave); font-size: 11px; }
+  .timeline li .obs { color: var(--texto-suave); font-size: 12px; }
+  .timeline .acao-concluir { margin-left: 8px; padding: 2px 8px; font-size: 11px;
+    border: 1px solid var(--borda); border-radius: 5px; background: #fff; cursor: pointer; }
+  .vazio-acao { font-size: 13px; color: var(--destaque); font-weight: 600; margin: 6px 0; }
+
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
+    padding: 12px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #fff;
+    max-width: 92vw; display: none; }
+  .toast.ok { background: var(--ok); display: block; }
+  .toast.erro { background: var(--erro); display: block; }
+  .erro-campo { background: #fef2f2; border: 1px solid #fecaca; color: var(--erro);
+    padding: 8px 10px; border-radius: 6px; font-size: 13px; margin-top: 8px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 12px; color: var(--texto-suave); padding: 6px 0; min-height: 40px; }
+  pre.ocr { background: #26231f; color: #e7e2da; font-size: 11px; line-height: 1.5; padding: 8px;
+    border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
+  .novo-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .novo-campos label { font-size: 12px; color: var(--texto-suave); display: block; margin-bottom: 2px; }
+  .novo-campos input { width: 100%; }
+  @media (max-width: 520px) { .novo-campos { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Funil de Vendas</h1>
+  <nav>
+    <button class="secundario" id="btn-novo">+ Novo Lead</button>
+    <a href="/">Captura</a>
+    <a href="/admin/leads">Leads</a>
+    <a href="/admin/logout">Sair</a>
+  </nav>
+</header>
+<main>
+  <div class="painel metricas" id="metricas">Carregando métricas…</div>
+  <div class="painel filtros">
+    <button class="tgl" id="f-atrasados" title="Próxima ação vencida">⚠️ Atrasados</button>
+    <button class="tgl" id="f-retorno" title="Retorno agendado para hoje">📅 Retorno hoje</button>
+    <button class="tgl" id="f-semcontato" title="Ainda sem nenhuma ligação">📵 Sem contato</button>
+    <select id="f-responsavel" title="Responsável"><option value="">Todos os responsáveis</option></select>
+    <select id="f-origem" title="De onde veio o lead">
+      <option value="">De onde veio: todos</option>
+      <option value="cartao">📇 Cartão de visita</option>
+      <option value="manual">⌨️ Digitado na hora</option>
+    </select>
+    <input type="date" id="f-de" title="Capturado a partir de">
+    <input type="date" id="f-ate" title="Capturado até">
+    <input type="search" id="f-busca" placeholder="Empresa, contato, WhatsApp…" style="min-width:180px">
+    <button class="primario" id="btn-aplicar">Aplicar</button>
+    <button class="secundario" id="btn-limpar">Limpar</button>
+    <span class="usuario-logado" id="usuario-logado"></span>
+  </div>
+  <select class="estagio-mobile" id="m-estagio" title="Estágio"></select>
+  <div class="kanban" id="kanban">Carregando leads…</div>
+  <div class="painel">
+    <details id="relatorio-perdas">
+      <summary style="font-size:14px;font-weight:700;color:var(--texto)">📉 Relatório de perdas</summary>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <input type="date" id="rp-de" title="Perdidos a partir de">
+        <input type="date" id="rp-ate" title="Perdidos até">
+        <button class="secundario" id="btn-rp">Filtrar</button>
+      </div>
+      <div id="rp-corpo" style="margin-top:8px;font-size:13px;color:var(--texto-suave)">Carregando…</div>
+    </details>
+  </div>
+</main>
+
+<div class="modal-fundo" id="modal-fundo"><div class="modal" id="modal"></div></div>
+<div class="modal-fundo" id="novo-fundo"><div class="modal" id="novo-modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var ESTAGIOS = {{ estagios | tojson }};
+  var ROTULOS = {{ rotulos | tojson }};
+  var RESPONSAVEIS = {{ responsaveis | tojson }};
+  var MOTIVOS_PERDA = {{ motivos_perda | tojson }};
+  var TIPOS_ATIVIDADE = {{ tipos_atividade | tojson }};
+  var DIAS_ESTAGNADO = {{ dias_estagnado }};
+  var USUARIO_NOME = {% if usuario_logado %}{{ usuario_logado.nome | tojson }}{% else %}null{% endif %};
+  var USUARIO_PEDE_GESTOR = {% if usuario_logado and usuario_logado.papel != 'gestor' %}true{% else %}false{% endif %};
+
+  var $ = function (id) { return document.getElementById(id); };
+  var leads = [];
+  var modalAberto = null;
+  var toggles = { atrasados: false, retorno: false, semcontato: false, meus: false };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function toast(msg, tipo) {
+    var el = $("toast");
+    el.className = "toast " + (tipo || "ok");
+    el.textContent = msg;
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.className = "toast"; }, 3600);
+  }
+  function falhaAoSalvar(erro) {
+    // nunca mostra erro técnico cru: diz o que não foi salvo e o que fazer
+    toast("Não foi possível salvar: " + (erro || "tente novamente") + " Seus dados continuam no formulário.", "erro");
+  }
+  function moeda(v) {
+    v = Number(v || 0);
+    return v > 0 ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : "";
+  }
+  function fotoUrl(l) {
+    var p = (l.cartao && l.cartao.imagens && l.cartao.imagens.frente) || l.foto_frente_path || "";
+    if (!p) return "";
+    return "/fotos/" + encodeURIComponent(String(p).split("/").pop());
+  }
+  function whatsappUrl(num) {
+    var d = String(num || "").replace(/\D/g, "");
+    if (!d) return "";
+    if (d.length <= 11) d = "55" + d;
+    return "https://wa.me/" + d;
+  }
+  function telUrl(num) {
+    var d = String(num || "").replace(/[^\d+]/g, "");
+    return d ? "tel:" + d : "";
+  }
+  function hoje() { return new Date().toISOString().slice(0, 10); }
+  function dataCurta(iso) { return String(iso || "").slice(0, 16).replace("T", " "); }
+  function agendadaAtrasada(l) {
+    return !!(l.tem_acao_agendada && l.data_proxima_acao &&
+      String(l.data_proxima_acao).slice(0, 10) < hoje() &&
+      l.estagio !== "fechado" && l.estagio !== "perdido");
+  }
+
+  // ---------------- métricas ----------------
+  function renderMetricas(m) {
+    m = m || {};
+    var h = '<span class="chip">📥 <b>' + (m.total || 0) + '</b> leads</span>';
+    ESTAGIOS.forEach(function (est) {
+      var n = (m.por_estagio && m.por_estagio[est]) || 0;
+      if (n > 0) h += ' <span class="chip">' + esc(ROTULOS[est]) + ': <b>' + n + "</b></span>";
+    });
+    h += ' <span class="chip">🎯 Conversão: <b>' + (m.conversao_percent || 0) + '%</b></span>';
+    var tempos = m.tempo_medio_dias || {};
+    var chaves = Object.keys(tempos);
+    if (chaves.length) {
+      h += ' <span class="chip">⏱️ ' + chaves.map(function (k) {
+        return esc(ROTULOS[k] || k) + " " + tempos[k] + "d";
+      }).join(" · ") + "</span>";
+    }
+    ["qualificacao", "negociacao", "fechamento"].forEach(function (f) {
+      var v = m["tempo_medio_" + f + "_dias"];
+      h += ' <span class="chip">⏱️ ' + f + ": <b>" + (v == null ? "—" : v + "d") + "</b></span>";
+    });
+    if (m.valor_esperado_total != null) {
+      h += ' <span class="chip conv" style="background:var(--destaque-fundo);border:1px solid var(--destaque);color:var(--destaque)">' +
+        '💰 Valor esperado no funil: <b>' + esc(moeda(m.valor_esperado_total) || "R$ 0") + "</b></span>";
+    }
+    $("metricas").innerHTML = h;
+  }
+
+  // ---------------- kanban ----------------
+  function renderCard(l) {
+    var foto = fotoUrl(l);
+    // miniatura do cartão só quando o lead veio de um cartão de visita
+    var img = (l.origem === "cartao" && foto)
+      ? '<img src="' + esc(foto) + '" alt="cartão" loading="lazy">' : "";
+    var campana = l.tem_acao_agendada ? "🔔 " : "";
+    var ago = l.tem_acao_agendada && l.data_proxima_acao
+      ? '<span class="tempo' + (agendadaAtrasada(l) ? " atrasado" : "") + '">' +
+        esc(dataCurta(l.data_proxima_acao).slice(0, 10)) + "</span>" : "";
+    var tempo = '<span class="tempo">⏳ ' + l.tempo_no_estagio_dias + "d no estágio</span>";
+    var valor = l.valor_estimado > 0 ? '<span class="card-valor">' + esc(moeda(l.valor_estimado)) + "</span>" : "";
+    var classes = "card-lead" + (l.estagnado ? " estagnado" : "") + (agendadaAtrasada(l) ? " acao-atrasada" : "");
+    return '<div class="' + classes + '" draggable="true" data-id="' + l.id +
+      '" onclick="abrirLead(' + l.id + ')">' +
+      '<div class="card-topo">' + img +
+      '<div class="nomes"><div class="nome">' + campana + esc(l.nome_empresa || "—") + "</div>" +
+      '<div class="sub">' + esc(l.nome_contato || "") + (l.whatsapp ? " · " + esc(l.whatsapp) : "") + "</div>" +
+      (l.ramo_atividade ? '<div class="sub">' + esc(l.ramo_atividade) + "</div>" : "") +
+      "</div></div>" +
+      '<div class="card-rodape">' + tempo + ago + valor + "</div></div>";
+  }
+
+  function renderKanban() {
+    var box = $("kanban");
+    if (!leads.length) {
+      box.innerHTML = '<div class="painel vazio-geral" style="width:100%">Nenhum lead capturado ainda. ' +
+        'Use o <a href="/">app de captura</a> ou o botão <b>+ Novo Lead</b> pra começar.</div>';
+      return;
+    }
+    var selMobile = $("m-estagio").value;
+    var mobile = window.matchMedia("(max-width: 700px)").matches;
+    var h = "";
+    ESTAGIOS.forEach(function (est) {
+      var cards = leads.filter(function (l) { return l.estagio === est; });
+      h += '<div class="coluna' + (mobile && selMobile && selMobile !== est ? " so-mobile-hidden" : "") +
+        '" data-estagio="' + est + '"' +
+        ' ondragover="event.preventDefault(); this.classList.add(\'over\')"' +
+        ' ondragleave="this.classList.remove(\'over\')"' +
+        ' ondrop="soltarNaColuna(event, \'' + est + '\')">' +
+        "<h3>" + esc(ROTULOS[est] || est) + ' <span class="cont">' + cards.length + "</span></h3>" +
+        '<div class="cards">' +
+        (cards.length ? cards.map(renderCard).join("") : '<div class="vazio-coluna">Nenhum lead aqui.</div>') +
+        "</div></div>";
+    });
+    box.innerHTML = h;
+  }
+
+  function paramsApi() {
+    var q = new URLSearchParams();
+    if (toggles.meus && USUARIO_NOME) q.set("responsavel", USUARIO_NOME);
+    if (toggles.atrasados) q.set("atrasados", "1");
+    if (toggles.retorno) q.set("retorno_hoje", "1");
+    if (toggles.semcontato) q.set("sem_contato", "1");
+    if (!toggles.meus && $("f-responsavel").value) q.set("responsavel", $("f-responsavel").value);
+    if ($("f-origem").value) q.set("origem", $("f-origem").value);
+    if ($("f-de").value) q.set("de", $("f-de").value);
+    if ($("f-ate").value) q.set("ate", $("f-ate").value);
+    if ($("f-busca").value.trim()) q.set("busca", $("f-busca").value.trim());
+    return q;
+  }
+
+  function carregar() {
+    var s = paramsApi().toString();
+    fetch("/api/funil" + (s ? "?" + s : ""))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.success) { $("kanban").innerHTML = '<div class="painel">Erro ao carregar os leads. Recarregue a página.</div>'; return; }
+        leads = d.leads || [];
+        renderKanban();
+        carregarMetricas();
+      })
+      .catch(function () {
+        $("kanban").innerHTML = '<div class="painel">Não consegui carregar os leads. ' +
+          'Verifique a conexão e recarregue a página.</div>';
+      });
+  }
+
+  function carregarMetricas() {
+    var q = new URLSearchParams();
+    if ($("f-de").value) q.set("de", $("f-de").value);
+    if ($("f-ate").value) q.set("ate", $("f-ate").value);
+    if (USUARIO_NOME && USUARIO_PEDE_GESTOR) q.set("responsavel", USUARIO_NOME);
+    var s = q.toString();
+    fetch("/api/funil/metricas" + (s ? "?" + s : ""))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { renderMetricas(d.metricas); })
+      .catch(function () { /* métricas são acessórias — kanban segue de pé */ });
+  }
+
+  // V3 (5.1): salvar o valor estimado editado no bloco de dados
+  window.salvarValor = function (id, valor, ok) {
+    fetch("/api/funil/" + id + "/dados", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ valor_estimado: Number(valor || 0) }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.success) ok(); else falhaAoSalvar(d.error); })
+      .catch(function () { falhaAoSalvar("falha de conexão"); });
+  };
+
+  // ---------------- mover estágio ----------------
+  function moverEstagio(id, estagio, motivo, observacao, senao) {
+    var corpo = { estagio: estagio, usuario: usuarioDaAcao(), observacao: observacao || "", motivo_perda: motivo || "" };
+    fetch("/api/funil/" + id + "/estagio", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (res.ok && res.d.success) {
+          toast("Lead movido para " + (ROTULOS[estagio] || estagio) + ".");
+          if (modalAberto === id) fecharModal();
+          carregar();
+          if (senao) senao();
+        } else {
+          senao ? senao(res.d.error || "Erro ao mover.") : falhaAoSalvar(res.d.error);
+        }
+      })
+      .catch(function () { senao ? senao("Erro de conexão.") : falhaAoSalvar("falha de conexão"); });
+  }
+  function usuarioDaAcao() {
+    if (USUARIO_NOME && USUARIO_PEDE_GESTOR) return USUARIO_NOME;
+    return $("sel-usuario") ? $("sel-usuario").value : (USUARIO_NOME || "");
+  }
+
+  window.soltarNaColuna = function (e, estagio) {
+    e.preventDefault();
+    e.currentTarget.classList.remove("over");
+    var id = parseInt(e.dataTransfer.getData("text/plain"), 10);
+    if (!id) return;
+    if (estagio === "perdido" || estagio === "negociacao") {
+      abrirLead(id); // motivos/observação obrigatória: sempre pelo modal de detalhe
+      return;
+    }
+    moverEstagio(id, estagio, "", "");
+  };
+  document.addEventListener("dragstart", function (e) {
+    var card = e.target && e.target.closest ? e.target.closest(".card-lead") : null;
+    if (card) e.dataTransfer.setData("text/plain", card.getAttribute("data-id"));
+  });
+
+  // ---------------- detalhe do lead ----------------
+  function linha(rotulo, valor) {
+    if (!valor) return "";
+    return '<div class="linha-campo"><b>' + esc(rotulo) + "</b><span>" + esc(valor) + "</span></div>";
+  }
+
+  function cartaoHtml(c) {
+    if (!c) return "";
+    c = c || {};
+    var h = '<details><summary>📇 Cartão de visita (dados lidos da foto)</summary>';
+    h += linha("Empresa", c.empresa && c.empresa.nome);
+    h += linha("Nome fantasia", c.empresa && c.empresa.nome_fantasia);
+    h += linha("Contato", c.pessoa && c.pessoa.nome);
+    h += linha("Cargo", c.pessoa && c.pessoa.cargo);
+    (c.telefones || []).forEach(function (t) { h += linha("Telefone (" + (t.tipo || "?") + ")", t.numero); });
+    (c.emails || []).forEach(function (e) { h += linha("E-mail", e.valor); });
+    (c.sites || []).forEach(function (s) { h += linha("Site", s.valor); });
+    (c.redes_sociais || []).forEach(function (r) { h += linha("Rede (" + (r.rede || "?") + ")", r.valor); });
+    h += linha("Endereço", c.endereco && c.endereco.texto);
+    (c.outras_informacoes || []).forEach(function (o) { h += linha("Outra informação", (o && o.texto) || o); });
+    var ocr = c.ocr || {};
+    if (ocr.frente || ocr.verso) {
+      h += "<details><summary>Ver texto original da foto</summary>";
+      if (ocr.frente) h += '<pre class="ocr">' + esc(ocr.frente) + "</pre>";
+      if (ocr.verso) h += '<pre class="ocr">' + esc(ocr.verso) + "</pre>";
+      h += "</details>";
+    }
+    h += "</details>";
+    return h;
+  }
+
+  var ICONES_ATIVIDADE = {
+    estagio: "➡️", ligacao: "📞", whatsapp: "💬", email: "📧", proposta: "📄",
+    observacao: "📝", proxima_acao: "🔔", cartao: "📇", oportunidade: "🎯", outro: "📌"
+  };
+
+  function timelineHtml(ats) {
+    var h = '<ul class="timeline">';
+    if (!ats.length) h += "<li>Nenhuma atividade ainda.</li>";
+    ats.forEach(function (a) {
+      var st = a.status || "realizada";
+      h += '<li class="st-' + st + '">' + (ICONES_ATIVIDADE[a.tipo] || "📌") + " " + esc(a.descricao || a.tipo);
+      if (st === "agendada") h += ' <span class="tagchip">· agendada</span>';
+      if (st === "cancelada") h += ' <span class="tagchip">· cancelada</span>';
+      h += ' <span class="quando">' + esc(dataCurta(a.data_hora)) + "</span>";
+      if (a.responsavel) h += ' <span class="quando">· ' + esc(a.responsavel) + "</span>";
+      if (st === "agendada") {
+        h += ' <button class="acao-concluir" data-aid="' + a.id + '" onclick="concluirAtividade(' +
+          a.id + ')">✓ concluída</button>';
+      }
+      h += "</li>";
+    });
+    return h + "</ul>";
+  }
+
+  function abrirLead(id) {
+    fetch("/api/funil/" + id)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.success) { toast("Não consegui abrir o lead. Recarregue a página.", "erro"); return; }
+        modalAberto = id;
+        var l = d.lead;
+        var tel = telUrl(l.whatsapp || l.telefone);
+        var wa = whatsappUrl(l.whatsapp || l.telefone);
+        var h = '<button class="fechar">✕</button>';
+        h += "<h2>" + esc(l.nome_empresa || ("Lead #" + l.id)) + "</h2>";
+        h += '<div class="sub">Lead #' + l.id + " · " + esc(ROTULOS[l.estagio] || l.estagio) +
+          (l.responsavel_atual ? " · 👤 " + esc(l.responsavel_atual) : "") + "</div>";
+
+        // ---- 1. ações rápidas (topo, sempre visível) ----
+        h += '<div class="acoes-rapidas">';
+        h += tel ? '<a class="btn" href="' + esc(tel) + '">📞 Ligar</a>' :
+                   '<span class="btn" title="Sem telefone cadastrado" style="opacity:.4;flex:1;min-width:110px;padding:10px 8px;border:1px solid var(--borda);border-radius:6px;display:inline-flex;align-items:center;justify-content:center">📞 Ligar</span>';
+        h += wa ? '<a class="btn" href="' + esc(wa) + '" target="_blank" rel="noopener">📲 WhatsApp</a>' : "";
+        h += '<button id="btn-focus-mover">➡ Mudar estágio</button>';
+        h += '<button id="btn-editar">✏️ Editar dados</button>';
+        h += "</div>";
+
+        // ---- 2. acompanhamento ----
+        h += '<div class="bloco"><h3>📋 Acompanhamento</h3>';
+        h += linha("Estágio", ROTULOS[l.estagio] || l.estagio);
+        h += linha("Responsável", l.responsavel_atual || "—");
+        h += linha("Última interação", l.data_ultima_interacao ? dataCurta(l.data_ultima_interacao) : "—");
+        h += linha("Há quanto tempo aqui", l.tempo_no_estagio_dias !== undefined ? l.tempo_no_estagio_dias + " dias" : "");
+
+        // próxima ação
+        if (l.tem_acao_agendada && l.proxima_acao) {
+          h += '<div class="linha-campo"><b>Próxima ação</b><span>🔔 ' + esc(l.proxima_acao) +
+            (l.data_proxima_acao ? " — " + esc(dataCurta(l.data_proxima_acao)) : "") + "</span></div>";
+          if (l.proxima_acao_observacao)
+            h += '<div class="campo"><span>' + esc(l.proxima_acao_observacao) + "</span></div>";
+        } else {
+          h += '<div class="vazio-acao">Nenhuma ação agendada — <a href="#" id="btn-agendar">agendar retorno</a></div>';
+        }
+
+        // formulário de próxima ação (abre sob demanda ou sempre no agendar)
+        h += '<div id="pa-form" style="display:' + (l.tem_acao_agendada && l.proxima_acao ? "none" : "block") + '">' +
+          '<label>Próxima ação (ex.: ligar, enviar proposta)</label>' +
+          '<input type="text" id="pa-acao" value="' + esc(l.proxima_acao) + '" placeholder="Ex.: ligar de manhã">' +
+          '<label>Data</label><input type="date" id="pa-data" value="' + esc(String(l.data_proxima_acao || "").slice(0, 10)) + '">' +
+          '<label>Observação</label><input type="text" id="pa-obs" value="' + esc(l.proxima_acao_observacao) + '">' +
+          '<div class="linha"><button id="btn-salvar-pa">🔔 Salvar próxima ação</button></div></div>';
+
+        // ligação
+        h += '<div class="bloco"><h3>📞 Ligação</h3>';
+        if (l.ligacao_feita) {
+          h += linha("Ligação feita", "Sim — " + dataCurta(l.data_ligacao));
+          h += linha("Virou lead", l.ligacao_virou_lead ? "Sim" : "Não");
+          h += linha("Observação", l.ligacao_observacao);
+        }
+        h += '<details id="li-form">' + (l.ligacao_feita ? "<summary>Registrar nova ligação</summary>" : "<summary>Registrar ligação</summary>") +
+          '<div class="check"><input type="checkbox" id="li-feita" ' + (l.ligacao_feita ? "checked" : "") + "> Ligação feita</div>" +
+          '<div class="check"><input type="checkbox" id="li-virou" ' + (l.ligacao_virou_lead ? "checked" : "") + "> Virou lead</div>" +
+          '<label>Observação</label><textarea id="li-obs" placeholder="Como foi a conversa?">' + esc(l.ligacao_observacao) + "</textarea>" +
+          '<div class="linha"><button id="btn-salvar-ligacao">💾 Registrar ligação</button></div></div></div>';
+
+        // mover estágio
+        h += '<div class="bloco" id="bloco-mover"><h3>➡ Mudar estágio</h3>' +
+          '<label>Responsável pela ação</label><select id="sel-usuario">' +
+          RESPONSAVEIS.map(function (r) {
+            var nome = typeof r === "string" ? r : r.nome;
+            return '<option' + (nome === (l.responsavel_atual || USUARIO_NOME) ? " selected" : "") + ">" + esc(nome) + "</option>";
+          }).join("") + "</select>" +
+          '<label>Destino</label><select id="mv-estagio">' +
+          ESTAGIOS.filter(function (e) { return e !== l.estagio; }).map(function (e) {
+            return '<option value="' + e + '">' + esc(ROTULOS[e] || e) + "</option>";
+          }).join("") + "</select>" +
+          '<div id="mv-perda" style="display:none"><label>Motivo da perda *</label>' +
+          '<select id="mv-motivo"><option value="">Escolha o motivo…</option>' +
+          MOTIVOS_PERDA.map(function (mo) { return "<option>" + esc(mo) + "</option>"; }).join("") +
+          "</select>" +
+          '<input type="text" id="mv-motivo-outro" placeholder="Descreva o motivo" style="display:none;width:100%;margin-top:6px"></div>' +
+          '<div id="mv-obs-wrap"><label id="mv-obs-rotulo">Observação (opcional)</label>' +
+          '<input type="text" id="mv-obs" placeholder="Ex.: proposta enviada"></div>' +
+          '<div class="erro-campo" id="mv-erro" style="display:none"></div>' +
+          '<div class="linha"><button class="primario" id="btn-mover">➡️ Mover lead</button></div></div>';
+
+        // registrar interação + timeline
+        h += '<div class="bloco"><h3>🕒 Atividades</h3>' +
+          '<details><summary>+ Registrar interação</summary>' +
+          '<label>Tipo</label><select id="it-tipo">' +
+          TIPOS_ATIVIDADE.filter(function (t) { return t !== "estagio" && t !== "cartao"; }).map(function (t) {
+            return '<option value="' + t + '">' + (ICONES_ATIVIDADE[t] || "") + " " + esc(t) + "</option>";
+          }).join("") + "</select>" +
+          '<label>Descrição</label><input type="text" id="it-desc" placeholder="O que aconteceu?">' +
+          '<div class="linha"><button id="btn-registrar-it">💾 Registrar interação</button></div></details>' +
+          '<div id="tl-wrap" style="margin-top:8px">' + timelineHtml(l.atividades || []) + "</div></div>";
+
+        // ---- 3. dados do lead ----
+        h += '<div class="bloco" id="bloco-dados"><h3>👤 Dados do lead</h3><div id="dados-leitura">';
+        h += linha("Contato", l.nome_contato);
+        h += linha("WhatsApp", l.whatsapp);
+        h += linha("Telefone", l.telefone);
+        h += linha("E-mail", l.email);
+        h += linha("Cidade", l.cidade);
+        h += linha("Endereço", l.endereco);
+        h += linha("Cargo", l.cargo);
+        h += linha("Segmento", l.ramo_atividade);
+        h += linha("Site", l.site);
+        h += linha("Possui sistema", l.possui_sistema);
+        h += linha("Valor estimado", moeda(l.valor_estimado));
+        h += linha("Anotações", l.anotacoes);
+        if (l.estagio === "perdido" && l.motivo_perda) h += linha("Motivo da perda", l.motivo_perda);
+        h += "</div>";
+        // edição inline dos campos principais (✏️ Editar)
+        h += '<div id="dados-edicao" style="display:none">' +
+          '<div class="novo-campos">' +
+          '<div><label>Empresa</label><input type="text" id="ed-empresa" value="' + esc(l.nome_empresa) + '"></div>' +
+          '<div><label>Contato</label><input type="text" id="ed-contato" value="' + esc(l.nome_contato) + '"></div>' +
+          '<div><label>WhatsApp</label><input type="tel" id="ed-whatsapp" value="' + esc(l.whatsapp) + '"></div>' +
+          '<div><label>Telefone</label><input type="tel" id="ed-telefone" value="' + esc(l.telefone) + '"></div>' +
+          '<div><label>E-mail</label><input type="text" id="ed-email" value="' + esc(l.email) + '"></div>' +
+          '<div><label>Cidade</label><input type="text" id="ed-cidade" value="' + esc(l.cidade) + '"></div>' +
+          '<div><label>Segmento</label><input type="text" id="ed-ramo" value="' + esc(l.ramo_atividade) + '"></div>' +
+          '<div><label>Valor estimado (R$)</label><input type="number" id="ed-valor" min="0" step="1" value="' + esc(l.valor_estimado || 0) + '"></div>' +
+          "</div>" +
+          '<div class="linha"><button id="btn-salvar-ed">💾 Salvar dados</button></div></div>';
+        if (l.origem === "cartao" && l.cartao) {
+          h += '<div class="fotos">' + (fotoUrl(l) ? '<img src="' + esc(fotoUrl(l)) + '" alt="frente do cartão" style="width:110px;border-radius:6px;border:1px solid var(--borda)">' : "") + "</div>";
+          h += cartaoHtml(l.cartao);
+        }
+        h += "</div>";
+
+        $("modal").innerHTML = h;
+        $("modal-fundo").classList.add("aberto");
+        conectarModal(l);
+      })
+      .catch(function () { toast("Não consegui abrir o lead. Verifique a conexão.", "erro"); });
+  }
+
+  function conectarModal(l) {
+    var id = l.id;
+    $("modal").querySelector(".fechar").addEventListener("click", fecharModal);
+    var focusMover = $("btn-focus-mover");
+    if (focusMover) focusMover.addEventListener("click", function () {
+      $("bloco-mover").scrollIntoView({ behavior: "smooth" });
+      $("mv-estagio").focus();
+    });
+
+    // próxima ação
+    var agendar = $("btn-agendar");
+    if (agendar) agendar.addEventListener("click", function (e) {
+      e.preventDefault(); $("pa-form").style.display = "block"; $("pa-acao").focus();
+    });
+    $("btn-salvar-pa").addEventListener("click", function () {
+      fetch("/api/funil/" + id + "/proxima-acao", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acao: $("pa-acao").value, data: $("pa-data").value,
+          observacao: $("pa-obs").value, usuario: usuarioDaAcao(),
+        }),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.d.success) { toast("Próxima ação agendada."); fecharModal(); carregar(); }
+          else falhaAoSalvar(res.d.error);
+        })
+        .catch(function () { falhaAoSalvar("falha de conexão"); });
+    });
+
+    // ligação
+    $("btn-salvar-ligacao").addEventListener("click", function () {
+      fetch("/api/funil/" + id + "/ligacao", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feita: $("li-feita").checked, virou_lead: $("li-virou").checked,
+          observacao: $("li-obs").value, usuario: $("sel-usuario").value,
+        }),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.d.success) { toast("Ligação registrada."); fecharModal(); carregar(); }
+          else falhaAoSalvar(res.d.error);
+        })
+        .catch(function () { falhaAoSalvar("falha de conexão"); });
+    });
+
+    // mover estágio — motivo por lista curta (nunca diálogo cru); qualificado→negociação
+    // exige observação ("por que virou oportunidade real")
+    var selMv = $("mv-estagio");
+    function atualizaMover() {
+      var destino = selMv.value;
+      $("mv-perda").style.display = destino === "perdido" ? "block" : "none";
+      var exigeObs = destino === "negociacao" && l.estagio === "qualificado";
+      $("mv-obs-rotulo").textContent = exigeObs
+        ? "Por que virou oportunidade real? *" : "Observação (opcional)";
+      $("mv-obs").required = exigeObs;
+    }
+    selMv.addEventListener("change", atualizaMover);
+    atualizaMover();
+    $("mv-motivo").addEventListener("change", function () {
+      $("mv-motivo-outro").style.display = this.value === "Outro" ? "block" : "none";
+    });
+    $("btn-mover").addEventListener("click", function () {
+      var destino = selMv.value;
+      var erro = "";
+      var motivo = "";
+      if (destino === "perdido") {
+        motivo = $("mv-motivo").value;
+        if (!motivo) erro = "Escolha o motivo da perda.";
+        else if (motivo === "Outro") {
+          motivo = $("mv-motivo-outro").value.trim();
+          if (!motivo) erro = "Descreva o motivo da perda.";
+        }
+      }
+      var obs = $("mv-obs").value.trim();
+      if (!erro && destino === "negociacao" && l.estagio === "qualificado" && !obs) {
+        erro = "Para virar negociação, explique por que essa oportunidade é real.";
+      }
+      var elErr = $("mv-erro");
+      if (erro) { elErr.textContent = erro; elErr.style.display = "block"; return; }
+      elErr.style.display = "none";
+      moverEstagio(id, destino, motivo, obs, function (msg) {
+        if (msg) { elErr.textContent = msg; elErr.style.display = "block"; }
+      });
+    });
+
+    // registrar interação
+    $("btn-registrar-it").addEventListener("click", function () {
+      fetch("/api/funil/" + id + "/atividade", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: $("it-tipo").value, descricao: $("it-desc").value, usuario: $("sel-usuario").value }),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.d.success) {
+            toast("Interação registrada.");
+            $("it-desc").value = "";
+            $("tl-wrap").innerHTML = timelineHtml(res.d.lead.atividades || []);
+            conectarConcluir();
+          } else falhaAoSalvar(res.d.error);
+        })
+        .catch(function () { falhaAoSalvar("falha de conexão"); });
+    });
+    conectarConcluir();
+
+    // editar dados
+    $("btn-editar").addEventListener("click", function () {
+      var ed = $("dados-edicao"), le = $("dados-leitura");
+      var mostrando = ed.style.display === "none";
+      ed.style.display = mostrando ? "block" : "none";
+      le.style.display = mostrando ? "none" : "block";
+      if (mostrando) $("ed-empresa").focus();
+    });
+    $("btn-salvar-ed").addEventListener("click", function () {
+      var corpo = new URLSearchParams();
+      corpo.set("lead_id", String(id));
+      corpo.set("nome_empresa", $("ed-empresa").value);
+      corpo.set("nome_contato", $("ed-contato").value);
+      corpo.set("whatsapp", $("ed-whatsapp").value);
+      corpo.set("telefone", $("ed-telefone").value);
+      corpo.set("email", $("ed-email").value);
+      corpo.set("cidade", $("ed-cidade").value);
+      corpo.set("ramo_atividade", $("ed-ramo").value);
+      fetch("/leads", { method: "POST", body: corpo })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.success) {
+            if (window.salvarValor) window.salvarValor(id, $("ed-valor").value, function () {
+              toast("Dados atualizados."); fecharModal(); carregar();
+            });
+            else { toast("Dados atualizados."); fecharModal(); carregar(); }
+          } else falhaAoSalvar(d.error);
+        })
+        .catch(function () { falhaAoSalvar("falha de conexão"); });
+    });
+  }
+
+  function conectarConcluir() {
+    document.querySelectorAll(".acao-concluir").forEach(function (b) {
+      b.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        concluirAtividade(parseInt(b.getAttribute("data-aid"), 10));
+      });
+    });
+  }
+
+  window.concluirAtividade = function (aid) {
+    if (!modalAberto) return;
+    fetch("/api/funil/" + modalAberto + "/atividade/" + aid + "/concluir", { method: "POST" })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (res.ok && res.d.success) {
+          toast("Ação concluída.");
+          var tl = $("tl-wrap");
+          if (tl) { tl.innerHTML = timelineHtml(res.d.lead.atividades || []); conectarConcluir(); }
+          carregar();
+        } else falhaAoSalvar(res.d.error);
+      })
+      .catch(function () { falhaAoSalvar("falha de conexão"); });
+  };
+
+  window.abrirLead = abrirLead;
+  function fecharModal() {
+    $("modal-fundo").classList.remove("aberto");
+    modalAberto = null;
+  }
+
+  // ---------------- novo lead ----------------
+  function abrirNovo() {
+    var h = '<button class="fechar">✕</button><h2>Novo Lead</h2>' +
+      '<div class="sub">Digite o essencial agora — dá pra completar depois no card.</div>' +
+      '<div class="novo-campos">' +
+      '<div><label>Empresa *</label><input type="text" id="nl-empresa"></div>' +
+      '<div><label>Contato</label><input type="text" id="nl-contato"></div>' +
+      '<div><label>WhatsApp</label><input type="tel" id="nl-whatsapp" placeholder="11 9..." ></div>' +
+      '<div><label>Telefone</label><input type="tel" id="nl-telefone"></div>' +
+      '<div><label>E-mail</label><input type="text" id="nl-email"></div>' +
+      '<div><label>Cidade</label><input type="text" id="nl-cidade"></div>' +
+      '<div><label>Segmento</label><input type="text" id="nl-ramo"></div>' +
+      '<div><label>Valor estimado (R$)</label><input type="number" id="nl-valor" min="0" step="1" value="0"></div>' +
+      "</div>" +
+      '<div class="erro-campo" id="nl-erro" style="display:none"></div>' +
+      '<div class="linha"><button id="btn-salvar-novo">💾 Criar lead</button></div>';
+    $("novo-modal").innerHTML = h;
+    $("novo-fundo").classList.add("aberto");
+    $("novo-modal").querySelector(".fechar").addEventListener("click", fecharNovo);
+    $("nl-empresa").focus();
+    $("btn-salvar-novo").addEventListener("click", function () {
+      var corpo = {
+        nome_empresa: $("nl-empresa").value.trim(),
+        nome_contato: $("nl-contato").value.trim(),
+        whatsapp: $("nl-whatsapp").value.trim(),
+        telefone: $("nl-telefone").value.trim(),
+        email: $("nl-email").value.trim(),
+        cidade: $("nl-cidade").value.trim(),
+        ramo_atividade: $("nl-ramo").value.trim(),
+        valor_estimado: Number($("nl-valor").value || 0),
+      };
+      fetch("/funil", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.d.success) {
+            toast("Lead criado."); fecharNovo(); carregar(); abrirLead(res.d.id);
+          } else {
+            var el = $("nl-erro");
+            el.textContent = res.d.error || "Não foi possível criar o lead. Tente novamente.";
+            el.style.display = "block";
+          }
+        })
+        .catch(function () {
+          var el = $("nl-erro");
+          el.textContent = "Falha de conexão — nada foi salvo. Tente novamente.";
+          el.style.display = "block";
+        });
+    });
+  }
+  function fecharNovo() { $("novo-fundo").classList.remove("aberto"); }
+
+  // ---------------- relatório de perdas (V3 — 5.4) ----------------
+  function carregarPerdas() {
+    var q = new URLSearchParams();
+    if ($("rp-de").value) q.set("de", $("rp-de").value);
+    if ($("rp-ate").value) q.set("ate", $("rp-ate").value);
+    var s = q.toString();
+    fetch("/api/funil/relatorio-perdas" + (s ? "?" + s : ""))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var rp = (d.relatorio || {});
+        var linhas = rp.linhas || [];
+        var h = '<b>Total de perdidos: ' + (rp.total || 0) + "</b>";
+        if (!linhas.length) {
+          h += '<div style="margin-top:6px">Nenhuma perda no período.</div>';
+        } else {
+          h += '<table style="width:100%;border-collapse:collapse;margin-top:8px">' +
+            "<tr><th style='text-align:left;padding:4px 6px;border-bottom:1px solid var(--borda);font-size:11px;text-transform:uppercase;color:var(--texto-suave)'>Motivo</th>" +
+            "<th style='text-align:left;padding:4px 6px;border-bottom:1px solid var(--borda);font-size:11px;text-transform:uppercase;color:var(--texto-suave)'>De onde veio</th>" +
+            "<th style='text-align:left;padding:4px 6px;border-bottom:1px solid var(--borda);font-size:11px;text-transform:uppercase;color:var(--texto-suave)'>Responsável</th>" +
+            "<th style='text-align:right;padding:4px 6px;border-bottom:1px solid var(--borda);font-size:11px;text-transform:uppercase;color:var(--texto-suave)'>Qtd</th>" +
+            "<th style='text-align:right;padding:4px 6px;border-bottom:1px solid var(--borda);font-size:11px;text-transform:uppercase;color:var(--texto-suave)'>Valor est.</th></tr>";
+          linhas.forEach(function (r) {
+            h += "<tr><td style='padding:4px 6px;border-bottom:1px dotted var(--borda)'>" + esc(r.motivo_perda) + "</td>" +
+              "<td style='padding:4px 6px;border-bottom:1px dotted var(--borda)'>" + esc(r.origem) + "</td>" +
+              "<td style='padding:4px 6px;border-bottom:1px dotted var(--borda)'>" + esc(r.responsavel_atual) + "</td>" +
+              "<td style='padding:4px 6px;border-bottom:1px dotted var(--borda);text-align:right'>" + r.quantidade + "</td>" +
+              "<td style='padding:4px 6px;border-bottom:1px dotted var(--borda);text-align:right'>" + esc(moeda(r.valor_estimado) || "—") + "</td></tr>";
+          });
+          h += "</table>";
+        }
+        $("rp-corpo").innerHTML = h;
+      })
+      .catch(function () { $("rp-corpo").innerHTML = "Não consegui carregar o relatório. Tente novamente."; });
+  }
+
+  // ---------------- inicialização ----------------
+  function montarFiltros() {
+    var selResp = $("f-responsavel");
+    (RESPONSAVEIS || []).forEach(function (r) {
+      var nome = typeof r === "string" ? r : r.nome;
+      var o = document.createElement("option");
+      o.value = nome; o.textContent = nome;
+      selResp.appendChild(o);
+    });
+    var selM = $("m-estagio");
+    var o0 = document.createElement("option");
+    o0.value = ""; o0.textContent = "Todos os estágios";
+    selM.appendChild(o0);
+    ESTAGIOS.forEach(function (e) {
+      var o = document.createElement("option");
+      o.value = e; o.textContent = ROTULOS[e] || e;
+      selM.appendChild(o);
+    });
+    if (USUARIO_PEDE_GESTOR) {
+      selResp.style.display = "none"; // não-gerente não alterna entre responsáveis
+    }
+    $("usuario-logado").textContent = USUARIO_NOME ? ("👤 " + USUARIO_NOME) : "";
+    if (USUARIO_NOME) {
+      var b = document.createElement("button");
+      b.className = "tgl"; b.id = "f-meus"; b.textContent = "⭐ Meus leads";
+      b.addEventListener("click", function () {
+        toggles.meus = !toggles.meus; b.classList.toggle("on", toggles.meus); carregar();
+      });
+      $("f-atrasados").parentNode.insertBefore(b, $("f-atrasados"));
+      if (USUARIO_PEDE_GESTOR) { toggles.meus = true; b.classList.add("on"); }
+    }
+  }
+
+  function ligaToggle(id, chave) {
+    var b = $(id);
+    b.addEventListener("click", function () {
+      toggles[chave] = !toggles[chave];
+      b.classList.toggle("on", toggles[chave]);
+      carregar();
+    });
+  }
+  ligaToggle("f-atrasados", "atrasados");
+  ligaToggle("f-retorno", "retorno");
+  ligaToggle("f-semcontato", "semcontato");
+  $("f-origem").addEventListener("change", carregar);
+  $("f-responsavel").addEventListener("change", carregar);
+  $("m-estagio").addEventListener("change", renderKanban);
+  var _ultimoMobile = null;
+  window.addEventListener("resize", function () {
+    var mobile = window.matchMedia("(max-width: 700px)").matches;
+    if (mobile !== _ultimoMobile) { _ultimoMobile = mobile; renderKanban(); }
+  });
+  $("btn-novo").addEventListener("click", abrirNovo);
+  $("btn-aplicar").addEventListener("click", carregar);
+  $("btn-limpar").addEventListener("click", function () {
+    toggles = { atrasados: false, retorno: false, semcontato: false, meus: USUARIO_PEDE_GESTOR };
+    $("f-atrasados").classList.remove("on"); $("f-retorno").classList.remove("on");
+    $("f-semcontato").classList.remove("on");
+    var bm = $("f-meus"); if (bm) bm.classList.toggle("on", toggles.meus);
+    $("f-responsavel").value = ""; $("f-origem").value = "";
+    $("f-de").value = ""; $("f-ate").value = ""; $("f-busca").value = "";
+    carregar();
+  });
+  $("f-busca").addEventListener("keydown", function (e) { if (e.key === "Enter") carregar(); });
+  $("btn-rp").addEventListener("click", carregarPerdas);
+  $("relatorio-perdas").addEventListener("toggle", function () {
+    if (this.open && !this._carregado) { this._carregado = true; carregarPerdas(); }
+  });
+  $("modal-fundo").addEventListener("click", function (e) { if (e.target === $("modal-fundo")) fecharModal(); });
+  $("novo-fundo").addEventListener("click", function (e) { if (e.target === $("novo-fundo")) fecharNovo(); });
+
+  montarFiltros();
+  carregar();
+})();
+</script>
+</body>
+</html>

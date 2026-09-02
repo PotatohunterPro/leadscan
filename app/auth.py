@@ -40,16 +40,34 @@ def senha_confere(senha: str) -> bool:
         return False
 
 
-def criar_cookie_valor() -> str:
-    """Valor assinado a guardar no cookie de sessão."""
-    return _serializer.dumps("admin")
+def criar_cookie_valor(usuario: str | None = None) -> str:
+    """Valor assinado a guardar no cookie de sessão.
+
+    Sem usuário (fluxo antigo/install) o payload continua "admin" — V3
+    (item 5.5) permite logar como um dos responsáveis; o papel NÃO vem do
+    cookie (que o cliente controla), e sim do banco, na hora da requisição.
+    """
+    return _serializer.dumps(f"u:{usuario}" if usuario else "admin")
+
+
+def _payload(valor: str | None) -> str | None:
+    if not valor:
+        return None
+    try:
+        return _serializer.loads(valor, max_age=SESSION_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
 
 
 def cookie_valido(valor: str | None) -> bool:
     """True se o cookie existe, está assinado e dentro da validade."""
-    if not valor:
-        return False
-    try:
-        return _serializer.loads(valor, max_age=SESSION_MAX_AGE) == "admin"
-    except (BadSignature, SignatureExpired):
-        return False
+    payload = _payload(valor)
+    return payload == "admin" or (isinstance(payload, str) and payload.startswith("u:"))
+
+
+def usuario_da_sessao(request) -> str | None:
+    """Nome do usuário logado (None na sessão 'admin' antiga = gestor)."""
+    payload = _payload(request.cookies.get(SESSION_COOKIE))
+    if isinstance(payload, str) and payload.startswith("u:"):
+        return payload[2:] or None
+    return None

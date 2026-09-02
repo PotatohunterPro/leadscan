@@ -157,6 +157,17 @@ curl -F "image=@cartao.jpg" http://127.0.0.1:8000/extract
 6. https://hublead.pradodacostasolucoes.com.br/ carrega com cadeado válido.
 7. /admin pede senha; logado, mostra status do Ollama (🟢/🔴 + modelo + última extração) e a lista de leads.
 
+## 🎨 Design (UX)
+
+Tokens de cor compartilhados entre o app e o painel admin (ver `PLANO-UX.md`):
+
+- **Verde** (`--verde`) = lead / ação principal (💾 salvar, 📲 WhatsApp, sucesso)
+- **Roxo** (`--ia`) = 🤖 IA / cartão de visita (seção 📇, botões "[ Usar no Lead ]")
+- **Vermelho** (`--erro`) = erro / destrutivo
+- **Cinzas** = neutro / texto secundário
+
+Regras do app: o cartão **nunca** sobrescreve campos manuais (o "[ Usar no Lead ]" só copia para campo vazio); toda ação tem feedback visível perto dela; empty states sempre oferecem o próximo passo; alvos de toque ≥ 44px e `prefers-reduced-motion` respeitado.
+
 ## Lições do projeto anterior — por que este é diferente
 
 - **Uma fonte de verdade só.** O docker-compose.yml builda direto do clone git (COPY . .). Não existe /opt/leadscan com outra cópia. Atualizar é sempre git pull && sudo bash install.sh.

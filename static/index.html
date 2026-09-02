@@ -6,6 +6,11 @@
 <title>LeadScan — Captura de Cartão</title>
 <style>
   :root {
+    /* Tokens de cor (semântica — ver PLANO-UX.md):
+       verde   = lead / ação principal (salvar, WhatsApp, sucesso)
+       roxo    = 🤖 IA / cartão de visita (seção 📇, botões "Usar no Lead")
+       vermelho = erro / destrutivo
+       cinzas  = neutro / texto secundário */
     --verde: #16a34a;
     --verde-escuro: #15803d;
     --fundo: #f6f7f9;
@@ -15,6 +20,7 @@
     --texto-suave: #667085;
     --erro: #dc2626;
     --ia: #7c3aed;
+    --ia-escuro: #6d28d9;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -71,6 +77,9 @@
     animation: girar .8s linear infinite;
   }
   @keyframes girar { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner .bola { animation: none; }
+  }
   .aviso { display: none; margin: 12px 0; padding: 12px; border-radius: 10px; font-size: 14px; }
   .aviso.erro { display: block; background: #fef2f2; border: 1px solid #fecaca; color: var(--erro); }
   .aviso.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
@@ -86,8 +95,14 @@
   button.wa:hover { background: #1fb959; }
   button.secundario { background: #eef0f4; color: var(--texto); }
   button:disabled { opacity: .55; cursor: not-allowed; }
+  button:focus-visible, a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--verde); outline-offset: 2px; }
+  a.link-botao { display: inline-flex; align-items: center; justify-content: center;
+    background: #eef0f4; color: var(--texto); padding: 13px 16px; border-radius: 10px;
+    font-size: 15px; font-weight: 700; text-decoration: none; }
   .download { margin-top: 8px; }
-  .download a { display: inline-block; margin-right: 8px; font-size: 13px; color: var(--verde-escuro); font-weight: 600; }
+  .download a { display: inline-block; margin-right: 8px; font-size: 13px;
+    color: var(--verde-escuro); font-weight: 600; padding: 12px 4px; min-height: 44px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--borda); }
   th { color: var(--texto-suave); font-size: 12px; text-transform: uppercase; }
@@ -96,7 +111,8 @@
     background: #eef0f4; font-size: 11px; color: var(--texto-suave); margin-left: 6px; }
   footer { text-align: center; font-size: 12px; color: var(--texto-suave); margin-top: 20px; }
   details { margin-top: 8px; }
-  summary { cursor: pointer; font-size: 13px; color: var(--texto-suave); }
+  summary { cursor: pointer; font-size: 13px; color: var(--texto-suave);
+    padding: 10px 0; min-height: 44px; }
 
   /* 📇 INFORMAÇÕES DO CARTÃO — seção visualmente distinta (item 19 do V2) */
   .secao-cartao-info { border: 1.5px solid #d9c6ff; background: #faf7ff; }
@@ -111,9 +127,9 @@
     font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
   .item-cartao .valor { display: block; overflow-wrap: anywhere; margin-top: 1px; }
   button.usar { background: var(--ia); color: #fff; border: none; border-radius: 8px;
-    padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0;
-    line-height: 1.3; white-space: normal; max-width: 200px; }
-  button.usar:hover { background: #6d28d9; }
+    padding: 10px 12px; font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    line-height: 1.3; white-space: normal; max-width: 200px; min-height: 44px; }
+  button.usar:hover { background: var(--ia-escuro); }
   .aviso-cartao { display: none; padding: 9px 11px; border-radius: 9px; font-size: 13px; margin-bottom: 10px; }
   .aviso-cartao.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
   .aviso-cartao.atencao { display: block; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
@@ -149,6 +165,9 @@
     <div class="previews" id="previews"></div>
     <div class="spinner" id="spinner"><span class="bola"></span> Analisando com IA…</div>
     <div class="aviso" id="aviso"></div>
+    <div class="linha-botoes">
+      <button class="secundario" id="btn-sem-foto">✍️ Preencher sem foto</button>
+    </div>
   </section>
 
   <!-- ============ INFORMAÇÕES DO CARTÃO (item 3/5/19 do V2) ============ -->
@@ -269,9 +288,14 @@
       <input type="text" id="redes_sociais" placeholder="@loja, facebook.com/loja">
     </details>
 
+    <div class="aviso" id="aviso-form"></div>
+
     <div class="linha-botoes">
       <button class="secundario" id="btn-salvar">💾 Salvar lead</button>
       <button class="wa" id="btn-whatsapp">📲 Enviar no WhatsApp</button>
+    </div>
+    <div class="linha-botoes" id="linha-novo-lead" style="display:none">
+      <button class="secundario" id="btn-novo-lead">🆕 Novo lead</button>
     </div>
   </section>
 
@@ -289,6 +313,7 @@
 (function () {
   var estado = { leadId: null, ddi: "55", cartao: null, caminhos: null };
   var fotos = { frente: null, verso: null };
+  var salvando = false;   // guarda de duplo submit (U1)
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -307,6 +332,12 @@
   function aoSelecionarFrente(e) {
     var arquivo = e.target.files && e.target.files[0];
     if (!arquivo) return;
+    // novo cartão fotografado = novo lead: avisa antes de descartar dados não salvos (U4)
+    if (formularioTemDados() &&
+        !confirm("Há dados no formulário. Fotografar outro cartão vai apagá-los. Continuar?")) {
+      e.target.value = "";   // permite escolher o mesmo arquivo depois
+      return;
+    }
     // novo cartão fotografado = novo lead (evita sobrescrever o anterior e acumular previews)
     estado.leadId = null;
     estado.cartao = null;
@@ -317,6 +348,8 @@
     var aviso = $("aviso");
     aviso.className = "aviso";
     aviso.textContent = "";
+    mostrarAvisoForm("", "");
+    $("linha-novo-lead").style.display = "none";
     fotos.frente = arquivo;
     $("foto-frente-box").classList.add("ativo");
     $("secao-cartao-info").style.display = "none";
@@ -346,6 +379,7 @@
   function processarFoto(arquivo) {
     var minha = ++versaoExtracao;
     mostrarAviso("", "");
+    mostrarAvisoForm("", "");
     var spinner = $("spinner");
     spinner.classList.add("visivel");
     $("btn-whatsapp").disabled = true;
@@ -368,7 +402,7 @@
           renderizarCartao(estado.cartao);
           mostrarAviso("✅ Cartão lido — confira as informações abaixo e use [ Usar no Lead ] quando quiser copiar.", "ok");
           $("secao-form").style.display = "block";
-          $("secao-cartao-info").scrollIntoView({ behavior: "smooth" });
+          rolarAte($("secao-cartao-info"));
         } else {
           mostrarAviso("Não consegui ler o cartão: " + (r.dados.error || "erro desconhecido"), "erro");
         }
@@ -534,6 +568,48 @@
     avisarCartao("Copiado para o lead: " + valor, "ok");
   }
 
+  // ---------- novo lead (U4) ----------
+  function formularioTemDados() {
+    var textos = ["nome_empresa", "endereco", "nome_contato", "whatsapp", "telefone",
+      "email", "site", "redes_sociais", "anotacoes", "qual_sistema", "mensalidade",
+      "ramo_atividade_outro"];
+    for (var i = 0; i < textos.length; i++) {
+      if (($(textos[i]).value || "").trim()) return true;
+    }
+    var selects = ["cargo", "aceita_demonstracao", "ramo_atividade", "possui_sistema",
+      "suporte_bom", "trocaria_suporte", "trocaria_preco"];
+    for (var j = 0; j < selects.length; j++) {
+      if ($(selects[j]).value) return true;
+    }
+    return false;
+  }
+
+  function resetarLead() {
+    estado.leadId = null;
+    estado.cartao = null;
+    estado.caminhos = null;
+    fotos.frente = null;
+    fotos.verso = null;
+    var campos = ["nome_empresa", "endereco", "nome_contato", "whatsapp", "telefone",
+      "email", "site", "redes_sociais", "anotacoes", "qual_sistema", "mensalidade",
+      "ramo_atividade_outro"];
+    campos.forEach(function (c) { $(c).value = ""; });
+    ["cargo", "aceita_demonstracao", "ramo_atividade", "possui_sistema",
+      "suporte_bom", "trocaria_suporte", "trocaria_preco"].forEach(function (c) {
+        $(c).value = "";
+      });
+    $("bloco-sistema").style.display = "none";
+    $("ramo_atividade_outro").style.display = "none";
+    $("foto-frente-box").classList.remove("ativo");
+    $("foto-verso-box").classList.remove("ativo");
+    $("linha-novo-lead").style.display = "none";
+    $("secao-cartao-info").style.display = "none";
+    limparPreviews();
+    mostrarAviso("", "");
+    mostrarAvisoForm("", "");
+    rolarAte($("secao-captura"));
+  }
+
   // ---------- persistência ----------
   function persistirLead() {
     var fd = new FormData();
@@ -616,7 +692,9 @@
     if (!($("nome_contato").value || "").trim()) faltando.push("Nome do Contato");
     if (!($("whatsapp").value || "").trim()) faltando.push("WhatsApp do Contato");
     if (faltando.length) {
-      mostrarAviso("Preencha os campos obrigatórios: " + faltando.join(", ") + ".", "erro");
+      // feedback PERTO da ação (U2) — não no topo da página
+      mostrarAvisoForm("Preencha os campos obrigatórios: " + faltando.join(", ") + ".", "erro");
+      rolarAte($("aviso-form"));
       return false;
     }
     return true;
@@ -641,8 +719,18 @@
   function enviarWhatsApp() {
     if (!validarFormulario()) return;
 
-    // persiste o lead antes de compartilhar (melhor esforço — não bloqueia)
-    persistirLead().catch(function (e) { console.warn("persistência falhou:", e); });
+    // persiste o lead antes de compartilhar (melhor esforço — não bloqueia),
+    // com feedback VISÍVEL (U6): a persistência nunca é silenciosa
+    if (!salvando) {
+      persistirLead()
+        .then(function (d) {
+          if (d.success) mostrarAvisoForm("✅ Lead #" + d.id + " salvo.", "ok");
+          else mostrarAvisoForm("⚠️ Não consegui salvar o lead: " + (d.error || "desconhecido") + ".", "atenção");
+        })
+        .catch(function (e) {
+          mostrarAvisoForm("⚠️ Não consegui salvar o lead (" + e + ").", "atenção");
+        });
+    }
 
     var texto = montarTexto();
     var arquivos = [];
@@ -659,7 +747,7 @@
         .catch(function (err) {
           if (err && err.name !== "AbortError") {
             console.warn(err);
-            mostrarAviso("Compartilhamento cancelado ou falhou: " + err.message, "erro");
+            mostrarAvisoForm("Compartilhamento cancelado ou falhou: " + err.message, "erro");
           }
         });
       return;
@@ -670,7 +758,7 @@
       var numero = normalizarWhatsApp($("whatsapp").value);
       if (!numero) { mostrarAviso("Informe o WhatsApp para enviar.", "erro"); return; }
       window.open("https://wa.me/" + numero + "?text=" + encodeURIComponent(texto), "_blank");
-      var aviso = mostrarAviso(
+      var aviso = mostrarAvisoForm(
         "Este navegador não anexa arquivos no compartilhamento. " +
         "A mensagem foi montada no WhatsApp — anexe a foto manualmente.",
         "atenção");
@@ -682,7 +770,7 @@
     var num2 = normalizarWhatsApp($("whatsapp").value);
     if (!num2) { mostrarAviso("Informe o WhatsApp para enviar.", "erro"); return; }
     window.open("https://wa.me/" + num2 + "?text=" + encodeURIComponent(texto), "_blank");
-    var aviso2 = mostrarAviso(
+    var aviso2 = mostrarAvisoForm(
       "Seu navegador não suporta compartilhar com fotos. " +
       "A mensagem abriu no WhatsApp — anexe a foto manualmente.",
       "atenção");
@@ -690,14 +778,21 @@
   }
 
   // ---------- utilitários de UI ----------
-  function mostrarAviso(msg, tipo) {
-    var el = $("aviso");
+  function mostrarAvisoNo(el, msg, tipo) {
+    if (!el) return null;
     el.className = "aviso";
     el.textContent = "";
     if (!msg) return el;
     el.className = "aviso " + tipo;
     el.textContent = msg;
     return el;
+  }
+  function mostrarAviso(msg, tipo) { return mostrarAvisoNo($("aviso"), msg, tipo); }
+  function mostrarAvisoForm(msg, tipo) { return mostrarAvisoNo($("aviso-form"), msg, tipo); }
+  function rolarAte(el) {
+    if (!el || !el.scrollIntoView) return;
+    var reduz = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduz ? "auto" : "smooth", block: "nearest" });
   }
 
   function mostrarBlocoSistema() {
@@ -711,7 +806,15 @@
       .then(function (d) {
         var box = $("lista-leads");
         if (!d.success || !d.leads || !d.leads.length) {
-          box.innerHTML = '<div class="vazio">Nenhum lead ainda — tire a primeira foto! 📸</div>';
+          // empty state com CTA (U14) — "não há dados" sempre oferece o próximo passo
+          box.innerHTML =
+            '<div class="vazio">Nenhum lead ainda.</div>' +
+            '<div class="linha-botoes">' +
+            '<button class="primario" id="cta-primeira-foto">📸 Tirar primeira foto</button>' +
+            '<a class="link-botao" href="/admin">Painel admin</a>' +
+            "</div>";
+          var cta = document.getElementById("cta-primeira-foto");
+          if (cta) cta.addEventListener("click", function () { rolarAte($("secao-captura")); });
           return;
         }
         var t = "<table><thead><tr><th>Empresa</th><th>Contato</th><th>WhatsApp</th><th>Quando</th></tr></thead><tbody>";
@@ -752,14 +855,42 @@
     if (!btn) return;
     usarNoLead(btn.dataset.campo, btn.dataset.valor);
   });
-  $("btn-salvar").addEventListener("click", function () {
+  function salvarLead() {
+    if (salvando) return;                       // U1: guarda de duplo submit
     if (!validarFormulario()) return;
+    salvando = true;
+    var btn = $("btn-salvar");
+    btn.disabled = true;
+    btn.textContent = "💾 Salvando…";          // U5: estado de loading
     persistirLead()
       .then(function (d) {
-        if (d.success) mostrarAviso("Lead #" + d.id + " salvo com sucesso! 💾", "ok");
-        else mostrarAviso("Erro ao salvar: " + (d.error || "desconhecido"), "erro");
+        if (d.success) {
+          mostrarAvisoForm("Lead #" + d.id + " salvo com sucesso! 💾", "ok");
+          $("linha-novo-lead").style.display = "flex";   // U4
+        } else {
+          mostrarAvisoForm("Erro ao salvar: " + (d.error || "desconhecido"), "erro");
+        }
+        rolarAte($("aviso-form"));
       })
-      .catch(function (e) { mostrarAviso("Erro ao salvar: " + e, "erro"); });
+      .catch(function (e) {
+        mostrarAvisoForm("Erro ao salvar: " + e, "erro");
+        rolarAte($("aviso-form"));
+      })
+      .finally(function () {
+        salvando = false;
+        btn.disabled = false;
+        btn.textContent = "💾 Salvar lead";
+      });
+  }
+  $("btn-salvar").addEventListener("click", salvarLead);
+  $("btn-novo-lead").addEventListener("click", resetarLead);
+  $("btn-sem-foto").addEventListener("click", function () {
+    // U3: fluxo 100% manual — foto é opcional (V2: fonte A é a coleta manual)
+    estado.leadId = null;
+    $("secao-form").style.display = "block";
+    $("linha-novo-lead").style.display = "none";
+    mostrarAvisoForm("Preencha os dados manualmente — a foto é opcional.", "atenção");
+    rolarAte($("secao-form"));
   });
   $("btn-whatsapp").addEventListener("click", enviarWhatsApp);
 

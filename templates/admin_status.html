@@ -5,37 +5,53 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LeadScan — Admin · Dashboard</title>
 <style>
+  :root {
+    /* tokens compartilhados com o app (static/index.html) — U9 */
+    --verde: #16a34a;
+    --verde-escuro: #15803d;
+    --fundo: #f6f7f9;
+    --cartao: #ffffff;
+    --borda: #e2e4e9;
+    --texto: #1f2430;
+    --texto-suave: #667085;
+    --erro: #dc2626;
+    --ia: #7c3aed;
+    --ia-escuro: #6d28d9;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f6f7f9; color: #1f2430; padding-bottom: 40px; }
-  header { background: #1f2430; color: #fff; padding: 16px 20px;
+    background: var(--fundo); color: var(--texto); padding-bottom: 40px; }
+  header { background: linear-gradient(135deg, #0f9d58, var(--verde)); color: #fff; padding: 16px 20px;
     display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
   header h1 { font-size: 18px; }
   header nav a { color: #d1fae5; text-decoration: none; font-size: 13px; margin-left: 14px; font-weight: 600; }
   main { max-width: 900px; margin: 0 auto; padding: 20px 16px; }
-  .cartao { background: #fff; border: 1px solid #e2e4e9; border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
   .cartao h2 { font-size: 16px; margin-bottom: 14px; }
   .status-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f1f4; font-size: 14px; }
   .status-item:last-child { border-bottom: none; }
-  .status-item .rot { color: #667085; min-width: 200px; font-size: 13px; }
-  .ok { color: #16a34a; font-weight: 700; }
-  .ruim { color: #dc2626; font-weight: 700; }
+  .status-item .rot { color: var(--texto-suave); min-width: 200px; font-size: 13px; }
+  .ok { color: var(--verde); font-weight: 700; }
+  .ruim { color: var(--erro); font-weight: 700; }
   .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
-  button { padding: 9px 16px; border: none; border-radius: 9px; background: #16a34a; color: #fff;
+  button { padding: 9px 16px; border: none; border-radius: 9px; background: var(--verde); color: #fff;
     font-weight: 700; font-size: 13px; cursor: pointer; }
-  button:hover { background: #15803d; }
+  button:hover { background: var(--verde-escuro); }
   button:disabled { opacity: .5; cursor: wait; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--verde); outline-offset: 2px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #f0f1f4; }
-  th { color: #667085; font-size: 12px; text-transform: uppercase; }
-  .vazio { color: #667085; font-size: 13px; padding: 10px 0; }
-  .link-mais { display: inline-block; margin-top: 12px; font-size: 13px; color: #15803d; font-weight: 600; }
+  th { color: var(--texto-suave); font-size: 12px; text-transform: uppercase; }
+  .vazio { color: var(--texto-suave); font-size: 13px; padding: 10px 0; }
+  .link-mais { display: inline-block; margin-top: 12px; font-size: 13px; color: var(--verde-escuro); font-weight: 600; }
 </style>
 </head>
 <body>
 <header>
   <h1>LeadScan · Admin</h1>
   <nav>
+    <a href="/funil">📊 Funil</a>
     <a href="/admin/leads">Leads</a>
     <a href="/admin/logout">Sair</a>
   </nav>
@@ -48,12 +64,12 @@
     </div>
     <div style="margin-top:12px">
       <button id="btn-testar">Testar agora</button>
-      <span id="testando" style="display:none;margin-left:10px;font-size:13px;color:#667085">testando…</span>
+      <span id="testando" style="display:none;margin-left:10px;font-size:13px;color:var(--texto-suave)">testando…</span>
     </div>
   </div>
 
   <div class="cartao">
-    <h2>📋 Leads coletados <span style="font-weight:400;color:#667085;font-size:13px">(últimos 10)</span></h2>
+    <h2>📋 Leads coletados <span style="font-weight:400;color:var(--texto-suave);font-size:13px">(últimos 10)</span></h2>
     <table>
       <thead><tr><th>Empresa</th><th>Contato</th><th>WhatsApp</th><th>Quando</th></tr></thead>
       <tbody id="corpo-leads"><tr><td colspan="4" class="vazio">Carregando…</td></tr></tbody>

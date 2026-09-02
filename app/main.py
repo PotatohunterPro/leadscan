@@ -145,6 +145,36 @@ def exige_admin_api(request: Request) -> None:
         )
 
 
+def usuario_logado(request: Request) -> dict:
+    """Quem está na sessão (V3 — 5.5): nome + papel lido DO BANCO.
+
+    Sessão 'admin' antiga (senha única sem usuário) = gestor, sempre viu
+    tudo e continua assim. O papel NUNCA vem do cliente: o cookie assinado
+    só guarda o nome; o papel é consultado em `usuarios` a cada request.
+    """
+    nome = auth.usuario_da_sessao(request)
+    if not nome:
+        return {"nome": None, "papel": "gestor"}
+    usuario = db.buscar_usuario(nome)
+    return {"nome": nome, "papel": (usuario or {}).get("papel", "sdr")}
+
+
+def _restricao_visivel(usuario: dict) -> str:
+    """Nome que a listagem é obrigada a filtrar ('' = vê tudo).
+
+    Item 5.5: bdr/sdr só enxergam os leads em que são o responsável atual —
+    aplicado NA QUERY do backend, nunca escondido só na UI."""
+    if usuario["papel"] != "gestor" and usuario["nome"]:
+        return usuario["nome"]
+    return ""
+
+
+def _responsavel_da_acao(usuario: dict, enviado: str) -> str:
+    """Quem assina a ação: não-gestor só pode agir como ele mesmo."""
+    restrito = _restricao_visivel(usuario)
+    return restrito or (enviado or usuario.get("nome") or "")
+
+
 # ------------------------------------------------------------- rotas públicas
 
 @app.get("/health")
@@ -269,7 +299,8 @@ async def extrair_cartao(
             lead = dict(legado)
             lead["foto_frente_path"] = caminho_frente
             lead["foto_verso_path"] = caminho_verso
-            lead_id = db.salvar_lead(lead)
+            # item 48: lead que nasce da captura tem origem 'cartao'
+            lead_id = db.salvar_lead(lead, origem="cartao")
             db.salvar_cartao(lead_id, info)
         except Exception as exc:
             logger.exception("Falha ao salvar lead no SQLite")
@@ -372,6 +403,13 @@ async def salvar_lead_completo(request: Request):
     except (TypeError, ValueError):
         lead_id = 0
 
+    # origem (item 18/47/48): campo explícito tem prioridade; sem campo,
+    # o lead que nasce com cartão é 'cartao' (captura) e o manual é 'manual'.
+    # Na EDIÇÃO (lead existente) a origem nunca muda (item 47).
+    origem = str(form.get("origem") or "").strip()
+    if origem not in ("manual", "cartao"):
+        origem = ""
+
     try:
         existente = db.buscar_lead(lead_id) if lead_id else None
         antigas = (
@@ -382,7 +420,8 @@ async def salvar_lead_completo(request: Request):
         if existente:
             db.atualizar_lead(lead_id, dados)
         else:
-            lead_id = db.salvar_lead(dados)
+            nova_origem = origem or ("cartao" if cartao is not None else "manual")
+            lead_id = db.salvar_lead(dados, origem=nova_origem)
         # apaga fotos antigas substituídas por novas nesta atualização (evita órfãos)
         novas = {dados.get("foto_frente_path"), dados.get("foto_verso_path")}
         for f in antigas:
@@ -410,31 +449,50 @@ async def salvar_lead_completo(request: Request):
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request, erro: str = ""):
     return templates.TemplateResponse(
-        request, "admin_login.html", {"erro": erro}
+        request, "admin_login.html",
+        {"erro": erro, "usuarios": db.listar_usuarios()},
     )
 
 
 @app.post("/admin/login")
-async def admin_login_post(request: Request, senha: str = Form(...)):
-    if auth.senha_confere(senha):
-        resp = RedirectResponse("/admin", status_code=303)
-        resp.set_cookie(
-            auth.SESSION_COOKIE,
-            auth.criar_cookie_valor(),
-            httponly=True,
-            secure=(request.url.scheme == "https"),
-            samesite="lax",
-            max_age=auth.SESSION_MAX_AGE,
+async def admin_login_post(
+    request: Request, senha: str = Form(...), usuario: str = Form("")
+):
+    if not auth.senha_confere(senha):
+        logger.warning("Tentativa de login admin com senha incorreta")
+        return templates.TemplateResponse(
+            request,
+            "admin_login.html",
+            {
+                "erro": "Senha incorreta. Tente novamente.",
+                "usuarios": db.listar_usuarios(),
+            },
+            status_code=401,
         )
-        logger.info("Login admin OK")
-        return resp
-    logger.warning("Tentativa de login admin com senha incorreta")
-    return templates.TemplateResponse(
-        request,
-        "admin_login.html",
-        {"erro": "Senha incorreta. Tente novamente."},
-        status_code=401,
+    # V3 (5.5): quem sou no time define a visibilidade no funil. Sem usuário
+    # selecionado (fluxo antigo) a sessão é 'admin' — gestora, via tudo.
+    usuario = usuario.strip()
+    if usuario and not db.buscar_usuario(usuario):
+        return templates.TemplateResponse(
+            request,
+            "admin_login.html",
+            {
+                "erro": "Usuário não encontrado. Selecione um nome válido.",
+                "usuarios": db.listar_usuarios(),
+            },
+            status_code=401,
+        )
+    resp = RedirectResponse("/admin", status_code=303)
+    resp.set_cookie(
+        auth.SESSION_COOKIE,
+        auth.criar_cookie_valor(usuario or None),
+        httponly=True,
+        secure=(request.url.scheme == "https"),
+        samesite="lax",
+        max_age=auth.SESSION_MAX_AGE,
     )
+    logger.info("Login OK (usuario=%s)", usuario or "admin")
+    return resp
 
 
 @app.get("/admin/logout", dependencies=[Depends(exige_admin)])
@@ -529,6 +587,302 @@ def api_detalhe_lead(lead_id: int):
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     return {"success": True, "lead": lead}
+
+
+# ------------------------------------------------------- funil de vendas
+# Tela operacional do time (funildevendas.md) — NÃO é admin genérico, mas usa
+# a mesma sessão do login. O fluxo de captura (/extract, /leads) fica intocado.
+
+@app.get("/funil", dependencies=[Depends(exige_admin)])
+def funil_page(request: Request):
+    from .funil import (
+        DIAS_ESTAGNADO,
+        ESTAGIOS,
+        MOTIVOS_PERDA,
+        RESPONSAVEIS,
+        ROTULOS_ESTAGIOS,
+        TIPOS_ATIVIDADE,
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "funil.html",
+        {
+            "estagios": ESTAGIOS,
+            "rotulos": ROTULOS_ESTAGIOS,
+            "responsaveis": RESPONSAVEIS,
+            "motivos_perda": MOTIVOS_PERDA,
+            "tipos_atividade": TIPOS_ATIVIDADE,
+            "dias_estagnado": DIAS_ESTAGNADO,
+            "usuario_logado": usuario_logado(request),
+        },
+    )
+
+
+@app.post("/funil", dependencies=[Depends(exige_admin_api)])
+async def funil_novo_lead(request: Request):
+    """[+ Novo Lead] direto na tela do funil (item 50 da spec).
+
+    Aceita JSON ou form com os campos de db.CAMPOS; o lead nasce em
+    estágio 'novo' com origem 'manual'. Não toca no fluxo de captura.
+    V3 (5.1): aceita 'valor_estimado' para o cálculo de valor esperado.
+    """
+    usuario = usuario_logado(request)
+    try:
+        corpo = await request.json()
+        if not isinstance(corpo, dict):
+            corpo = {}
+    except Exception:
+        corpo = dict((await request.form()).items())
+    dados = {c: corpo.get(c, "") for c in db.CAMPOS}
+    if not str(dados.get("nome_empresa") or dados.get("nome_contato") or "").strip():
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "error": "Informe ao menos a empresa ou o contato do lead.",
+            },
+        )
+    try:
+        valor = float(corpo.get("valor_estimado") or 0)
+    except (TypeError, ValueError):
+        valor = 0.0
+    lead_id = db.salvar_lead(dados, origem="manual")
+    if valor > 0:
+        db.salvar_valor_estimado(lead_id, valor)
+    # quem criou é o responsável (5.5: BDR/SDR agem sobre o próprio lead)
+    if usuario["papel"] != "gestor" and usuario["nome"]:
+        db.registrar_responsavel(lead_id, usuario["nome"])
+    return {"success": True, "id": lead_id, "lead": db.buscar_lead_funil(lead_id)}
+
+
+@app.get("/api/funil/metricas", dependencies=[Depends(exige_admin_api)])
+def api_funil_metricas(request: Request, de: str | None = None, ate: str | None = None):
+    """Contagem por estágio, conversão, tempo médio e valor esperado (V3 5.1).
+
+    Visibilidade (5.5): bdr/sdr só veem as métricas dos próprios leads."""
+    return {
+        "success": True,
+        "metricas": db.metricas_funil(
+            de=de, ate=ate, responsavel=_restricao_visivel(usuario_logado(request))
+        ),
+    }
+
+
+@app.get("/api/funil/relatorio-perdas", dependencies=[Depends(exige_admin_api)])
+def api_funil_relatorio_perdas(
+    request: Request, de: str | None = None, ate: str | None = None
+):
+    """V3 (5.4): contagem de leads perdidos por motivo × origem × responsável.
+    Sem tabela nova — lê direto de leads (estagio='perdido').
+
+    Declarada ANTES de /api/funil/{lead_id} para não ser capturada pelo
+    parâmetro de rota (que exige inteiro e devolveria 422)."""
+    return {
+        "success": True,
+        "relatorio": db.relatorio_perdas(
+            de=de, ate=ate, responsavel=_restricao_visivel(usuario_logado(request))
+        ),
+    }
+
+
+@app.get("/api/funil", dependencies=[Depends(exige_admin_api)])
+def api_funil_listar(
+    request: Request,
+    busca: str = "",
+    responsavel: str = "",
+    estagio: str = "",
+    origem: str = "",
+    de: str | None = None,
+    ate: str | None = None,
+    sem_contato: str = "",
+    atrasados: str = "",
+    retorno_hoje: str = "",
+    limite: int = 500,
+):
+    """Kanban com filtros V2 (itens 31–34): origem, sem contato, atrasados,
+    retorno hoje e busca ampliada (telefone/e-mail).
+
+    Visibilidade (5.5): o filtro por responsável de bdr/sdr é APLICADO AQUI,
+    no backend — o que o cliente pedir não amplia a visão."""
+    restrito = _restricao_visivel(usuario_logado(request))
+    leads = db.listar_funil(
+        busca=busca, responsavel=restrito or responsavel, estagio=estagio,
+        origem=origem, de=de, ate=ate,
+        sem_contato=_verdadeiro(sem_contato),
+        atrasados=_verdadeiro(atrasados),
+        retorno_hoje=_verdadeiro(retorno_hoje),
+        limite=limite,
+    )
+    return {"success": True, "total": len(leads), "leads": leads}
+
+
+@app.get("/api/funil/{lead_id}", dependencies=[Depends(exige_admin_api)])
+def api_funil_detalhe(lead_id: int, request: Request):
+    lead = db.buscar_lead_funil(lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    restrito = _restricao_visivel(usuario_logado(request))
+    if restrito and lead.get("responsavel_atual") != restrito:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    return {"success": True, "lead": lead}
+
+
+@app.post("/api/funil/{lead_id}/estagio", dependencies=[Depends(exige_admin_api)])
+async def api_funil_mover_estagio(lead_id: int, request: Request):
+    usuario = usuario_logado(request)
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    estagio = str(corpo.get("estagio", "")).strip()
+    enviado = str(corpo.get("usuario", "")).strip()
+    observacao = str(corpo.get("observacao", "")).strip()
+    motivo_perda = str(corpo.get("motivo_perda", "")).strip()
+    try:
+        lead = db.mudar_estagio(
+            lead_id, estagio, usuario=_responsavel_da_acao(usuario, enviado),
+            observacao=observacao, motivo_perda=motivo_perda,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    return {"success": True, "lead": lead}
+
+
+@app.post("/api/funil/{lead_id}/ligacao", dependencies=[Depends(exige_admin_api)])
+async def api_funil_ligacao(lead_id: int, request: Request):
+    usuario = usuario_logado(request)
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    feita = _verdadeiro(corpo.get("feita", True))
+    virou_lead = _verdadeiro(corpo.get("virou_lead", False))
+    observacao = str(corpo.get("observacao", "")).strip()
+    enviado = str(corpo.get("usuario", "")).strip()
+    try:
+        lead = db.registrar_ligacao(
+            lead_id, feita, virou_lead, observacao,
+            _responsavel_da_acao(usuario, enviado),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    return {"success": True, "lead": lead}
+
+
+@app.post("/api/funil/{lead_id}/atividade", dependencies=[Depends(exige_admin_api)])
+async def api_funil_atividade(lead_id: int, request: Request):
+    """[+ Registrar interação] (item 25): whatsapp/email/proposta/observacao/outro."""
+    usuario = usuario_logado(request)
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    tipo = str(corpo.get("tipo", "")).strip()
+    descricao = str(corpo.get("descricao", "")).strip()
+    enviado = (
+        str(corpo.get("usuario", "")).strip()
+        or str(corpo.get("responsavel", "")).strip()
+    )
+    try:
+        db.registrar_interacao(
+            lead_id, tipo, descricao, _responsavel_da_acao(usuario, enviado)
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    # resposta com a timeline atualizada (mesmo formato do detalhe)
+    return {"success": True, "lead": db.buscar_lead_funil(lead_id)}
+
+
+@app.post("/api/funil/{lead_id}/proxima-acao", dependencies=[Depends(exige_admin_api)])
+async def api_funil_proxima_acao(lead_id: int, request: Request):
+    """Próxima ação do lead (item 21): acao + data + observacao."""
+    usuario = usuario_logado(request)
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    acao = str(corpo.get("acao", "")).strip()
+    data = str(corpo.get("data", "")).strip()
+    observacao = str(corpo.get("observacao", "")).strip()
+    enviado = str(corpo.get("usuario", "")).strip()
+    try:
+        db.salvar_proxima_acao(
+            lead_id, acao, data, observacao,
+            _responsavel_da_acao(usuario, enviado),
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    # resposta com a timeline atualizada (mesmo formato do detalhe)
+    return {"success": True, "lead": db.buscar_lead_funil(lead_id)}
+
+
+@app.post("/api/funil/{lead_id}/dados", dependencies=[Depends(exige_admin_api)])
+async def api_funil_dados(lead_id: int, request: Request):
+    """V3 (5.1): atualiza o valor estimado do lead. Campo dado, não estado."""
+    try:
+        corpo = await request.json()
+    except Exception:
+        corpo = {}
+    if "valor_estimado" not in corpo:
+        return JSONResponse(
+            status_code=422,
+            content={"success": False, "error": "Informe 'valor_estimado'."},
+        )
+    try:
+        valor = float(corpo.get("valor_estimado") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse(
+            status_code=422,
+            content={"success": False, "error": "'valor_estimado' deve ser um número."},
+        )
+    try:
+        lead = db.salvar_valor_estimado(lead_id, valor)
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    return {"success": True, "lead": lead}
+
+
+@app.post("/api/funil/{lead_id}/atividade/{atividade_id}/concluir", dependencies=[Depends(exige_admin_api)])
+async def api_funil_concluir_atividade(lead_id: int, atividade_id: int, request: Request):
+    """V3 (5.2): concluir uma próxima ação agendada (por ID — decisão
+    documentada no docs; não por proximidade de data)."""
+    usuario = usuario_logado(request)
+    try:
+        lead = db.concluir_atividade(
+            lead_id, atividade_id, _responsavel_da_acao(usuario, "")
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    return {"success": True, "lead": db.buscar_lead_funil(lead_id)}
+
+
+@app.post("/api/funil/{lead_id}/atividade/{atividade_id}/cancelar", dependencies=[Depends(exige_admin_api)])
+async def api_funil_cancelar_atividade(lead_id: int, atividade_id: int, request: Request):
+    """V3 (5.2): cancelar uma próxima ação agendada."""
+    usuario = usuario_logado(request)
+    try:
+        lead = db.cancelar_atividade(
+            lead_id, atividade_id, _responsavel_da_acao(usuario, "")
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422, content={"success": False, "error": str(exc)}
+        )
+    return {"success": True, "lead": db.buscar_lead_funil(lead_id)}
+
 
 
 @app.get("/fotos/{nome}", dependencies=[Depends(exige_admin_api)])
