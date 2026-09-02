@@ -166,10 +166,10 @@
 </head>
 <body>
 <header class="topbar">
-  <h1>Funil de Vendas</h1>
+  <div class="marca"><img src="/static/logo.png" alt="HUB Solução — Funil de Vendas"></div>
   <nav>
     <button class="secundario" id="btn-novo">+ Novo Lead</button>
-    <a href="/">Captura</a>
+    <a href="/bdr">📸 Captura</a>
     <a href="/admin/leads">Leads</a>
     <a href="/admin/logout">Sair</a>
   </nav>
@@ -350,7 +350,7 @@
     var box = $("kanban");
     if (!leads.length) {
       box.innerHTML = '<div class="painel vazio-geral" style="width:100%">Nenhum lead capturado ainda. ' +
-        'Use o <a href="/">app de captura</a> ou o botão <b>+ Novo Lead</b> pra começar.</div>';
+        'Use o <a href="/bdr">app de captura</a> ou o botão <b>+ Novo Lead</b> pra começar.</div>';
       return;
     }
     var selMobile = $("m-estagio").value;

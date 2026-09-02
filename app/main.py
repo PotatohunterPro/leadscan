@@ -253,8 +253,25 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/", response_class=FileResponse)
+@app.get("/", include_in_schema=False)
 def index():
+    """Raiz do domínio agora abre o FUNIL (kanban) — o ponto de entrada do time.
+
+    A captura de cartão (tela do BDR na rua) mudou para /bdr. Quem não está
+    logado é levado ao login por /funil (exige_admin).
+    """
+    return RedirectResponse("/funil", status_code=303)
+
+
+@app.get("/bdr", dependencies=[Depends(exige_admin)])
+def pagina_captura_bdr():
+    """Tela "minha" do BDR: captura de cartão na rua (static/index.html).
+
+    Exige login (senha + nome) para saber QUEM está capturando: os leads
+    criados por esta tela já nascem atribuídos ao usuário logado (a atribuição
+    acontece no POST /leads, que lê a sessão). A rota antiga na raiz ("/")
+    agora pertence ao funil.
+    """
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -553,6 +570,12 @@ async def salvar_lead_completo(request: Request):
         else:
             nova_origem = origem or ("cartao" if cartao is not None else "manual")
             lead_id = db.salvar_lead(dados, origem=nova_origem)
+            # /bdr (captura na rua): lead NOVO já nasce atribuído a quem está
+            # logado capturando (5.5 — só quando há usuário na sessão; gestor
+            # 'admin' antigo não nomeado continua sem dono, como antes).
+            quem_capturou = usuario_logado(request)
+            if quem_capturou["nome"] and quem_capturou["papel"] != "gestor":
+                db.registrar_responsavel(lead_id, quem_capturou["nome"])
         # apaga fotos antigas substituídas por novas nesta atualização (evita órfãos)
         novas = {dados.get("foto_frente_path"), dados.get("foto_verso_path")}
         for f in antigas:
@@ -657,8 +680,8 @@ async def admin_login_post(
 
 
 def _criar_sessao(request: Request, usuario: str | None) -> RedirectResponse:
-    """Grava o cookie de sessão e manda pro painel."""
-    resp = RedirectResponse("/admin", status_code=303)
+    """Grava o cookie de sessão e manda pro funil (a tela principal)."""
+    resp = RedirectResponse("/funil", status_code=303)
     resp.set_cookie(
         auth.SESSION_COOKIE,
         auth.criar_cookie_valor(usuario),
