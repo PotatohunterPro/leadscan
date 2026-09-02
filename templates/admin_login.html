@@ -4,40 +4,55 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LeadScan — Admin · Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/design-tokens.css">
 <style>
   :root {
-    /* tokens compartilhados com o app (static/index.html) — U9 */
-    --verde: #16a34a;
-    --verde-escuro: #15803d;
-    --borda: #e2e4e9;
-    --texto-suave: #667085;
-    --erro: #dc2626;
+    /* aliases LeadScan→HUB (cores reais vêm de /static/design-tokens.css) */
+    --verde: var(--azure);
+    --verde-escuro: var(--deep);
+    --borda: var(--line);
+    --texto-suave: var(--mut);
+    --erro: var(--danger);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: linear-gradient(135deg, #0f9d58, var(--verde));
+    font-family: var(--font-body);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #E4F1FB 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #DCEEFB 0%, transparent 55%),
+      var(--bg);
     min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
   }
   .cartao {
-    background: #fff; border-radius: 16px; padding: 32px; width: 100%; max-width: 380px;
-    box-shadow: 0 20px 50px rgba(0,0,0,.25);
+    background: var(--card); border-radius: var(--r-lg); padding: 32px; width: 100%; max-width: 380px;
+    box-shadow: var(--sh-lg); border: 1px solid var(--line); position: relative; overflow: hidden;
+    animation: mpop .3s var(--ease);
   }
-  h1 { font-size: 20px; margin-bottom: 4px; }
+  .cartao::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, var(--sky), var(--azure), var(--deep));
+  }
+  h1 { font-family: var(--font-head); font-size: 22px; margin-bottom: 4px; color: var(--deep); }
   p { color: var(--texto-suave); font-size: 13px; margin-bottom: 20px; }
-  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-  input[type=password] {
-    width: 100%; padding: 12px; border: 1px solid var(--borda); border-radius: 10px; font-size: 15px;
+  label { display: block; font-size: 11px; font-weight: 800; margin-bottom: 6px; color: var(--mut); text-transform: uppercase; letter-spacing: .6px; }
+  input[type=password], select {
+    width: 100%; padding: 12px 14px; border: 1.5px solid var(--borda); border-radius: 12px; font: 600 15px var(--font-body);
+    color: var(--ink); background: #F8FBFE; box-shadow: var(--sh-in); transition: .2s var(--ease);
   }
-  input:focus { outline: 2px solid #bfe3cc; border-color: var(--verde); }
+  input:focus, select:focus { border-color: var(--azure); background: #fff; outline: none; box-shadow: 0 0 0 4px rgba(0,137,206,.12); }
   button {
-    width: 100%; margin-top: 16px; padding: 13px; border: none; border-radius: 10px;
-    background: var(--verde); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+    width: 100%; margin-top: 16px; padding: 14px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, var(--azure) 0%, var(--deep) 100%); color: #fff;
+    font: 800 15px var(--font-body); cursor: pointer;
+    box-shadow: 0 8px 20px rgba(0,137,206,.35), 0 1px 0 rgba(255,255,255,.25) inset; transition: .25s var(--ease);
   }
-  button:hover { background: var(--verde-escuro); }
-  button:focus-visible, a:focus-visible, input:focus-visible {
-    outline: 2px solid var(--verde); outline-offset: 2px; }
-  .erro { background: #fef2f2; border: 1px solid #fecaca; color: var(--erro);
+  button:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(0,137,206,.45), 0 1px 0 rgba(255,255,255,.25) inset; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--azure); outline-offset: 2px; }
+  .erro { background: var(--danger-bg); border: 1px solid var(--danger-line); color: var(--danger);
     padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; }
   .voltar { display: block; text-align: center; margin-top: 14px; font-size: 12px; color: var(--texto-suave); text-decoration: none; }
 </style>
@@ -51,7 +66,7 @@
       <input type="hidden" name="token" value="{{ token }}">
       {% if usuarios %}
       <label for="usuario">Quem está entrando</label>
-      <select name="usuario" id="usuario" style="width:100%;padding:12px;border:1px solid var(--borda);border-radius:10px;font-size:15px;margin-bottom:10px">
+      <select name="usuario" id="usuario" style="margin-bottom:10px">
         <option value="">— Gestor / visão geral —</option>
         {% for u in usuarios %}
         <option value="{{ u.nome }}">{{ u.nome }} · {{ u.papel }}</option>

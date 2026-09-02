@@ -119,6 +119,10 @@ class TestTransicoes(unittest.TestCase):
 
 
 class TestMetricas(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        db.init_db()
+
     def test_contagem_e_conversao(self):
         # a suíte compartilha o DATA_DIR entre arquivos — usa delta (antes/depois)
         antes = db.metricas_funil()

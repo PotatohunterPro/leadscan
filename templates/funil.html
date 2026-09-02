@@ -4,60 +4,71 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>LeadScan — Funil de Vendas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/design-tokens.css">
 <style>
   :root {
-    /* paleta neutra de base (cinzas quentes) — cor de destaque reservada
-       só para "precisa de atenção agora". Ferramenta, não vitrine. */
-    --fundo: #f5f4f2;
-    --cartao: #ffffff;
-    --borda: #e4e1dc;
-    --texto: #26231f;
-    --texto-suave: #6f6a63;
-    --coluna-bg: #edeae5;
-    --destaque: #b45309;      /* âmbar — única cor de atenção */
-    --destaque-fundo: #fdf6ec;
-    --ok: #166534;
-    --erro: #b91c1c;
+    /* aliases LeadScan→HUB (o CSS página-específico abaixo usa estes nomes;
+       as cores reais vêm de /static/design-tokens.css) */
+    --fundo:var(--bg); --cartao:var(--card); --borda:var(--line);
+    --texto:var(--ink); --texto-suave:var(--mut); --coluna-bg:var(--bg-2);
+    --destaque:var(--amber); --destaque-fundo:var(--amber-bg);
+    --ok:var(--green); --erro:var(--danger);
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--fundo); color: var(--texto); padding-bottom: 60px; font-size: 14px; }
-  header { background: #26231f; color: #fff; padding: 12px 20px;
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-  header h1 { font-size: 16px; font-weight: 700; }
-  header nav a { color: #cfcac2; text-decoration: none; font-size: 13px; margin-left: 14px; font-weight: 600; }
-  header nav a:hover { color: #fff; }
+  body { font-family: var(--font-body); padding-bottom: 60px; font-size: 14px; }
   main { max-width: 1500px; margin: 0 auto; padding: 14px; }
-  .painel { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px;
-    padding: 12px; margin-bottom: 12px; }
+  .painel { background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--r-md);
+    box-shadow: var(--sh-md); padding: 14px; margin-bottom: 12px; }
   .metricas { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .chip { background: var(--coluna-bg); border-radius: 6px; padding: 5px 10px; font-size: 13px;
-    font-weight: 600; color: var(--texto-suave); }
-  .chip b { color: var(--texto); }
+  .chip { background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 12px; font-size: 12.5px; font-weight: 700; color: var(--deep); box-shadow: var(--sh-sm); }
+  .chip::before { display: none; }
+  .chip b { color: var(--ink); font-weight: 800; }
 
-  /* filtros — chips ligáveis (respondem "o que eu faço agora?") */
+  /* filtros — tiles ligáveis (respondem "o que eu faço agora?") */
   .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .tgl { border: 1px solid var(--borda); background: #fff; color: var(--texto-suave);
-    border-radius: 6px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .tgl.on { background: var(--texto); border-color: var(--texto); color: #fff; }
+  .tgl { border: 1.5px solid var(--line); background: #fff; color: var(--mut);
+    border-radius: 12px; padding: 10px 16px; font: 700 13px var(--font-body); cursor: pointer;
+    min-height: 44px; display: inline-flex; align-items: center; transition: .25s var(--ease); }
+  .tgl:hover { border-color: var(--sky); color: var(--deep); }
+  .tgl.on { background: linear-gradient(135deg,#EAF5FD,#DCEEFB); border-color: var(--azure);
+    color: var(--deep); box-shadow: 0 8px 20px rgba(0,137,206,.18); }
   select, input[type=text], input[type=search], input[type=date], input[type=number], input[type=tel], textarea {
-    padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; font-size: 14px;
-    background: #fff; color: var(--texto); font-family: inherit; }
+    padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px; font-size: 14px;
+    background: #F8FBFE; color: var(--ink); font-family: var(--font-body); box-shadow: var(--sh-in); }
   textarea { resize: vertical; }
-  button { padding: 8px 14px; border: none; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; }
-  .primario { background: var(--texto); color: #fff; }
-  .primario:hover { background: #403c36; }
-  .secundario { background: var(--coluna-bg); color: var(--texto); }
-  .perigo { background: #fff; color: var(--erro); border: 1px solid var(--erro); }
-  button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible {
-    outline: 2px solid var(--destaque); outline-offset: 2px; }
-  .usuario-logado { margin-left: auto; font-size: 13px; color: var(--texto-suave); font-weight: 600; }
+  button { padding: 12px 18px; border: 0; border-radius: 12px; font: 800 13px var(--font-body);
+    cursor: pointer; transition: .25s var(--ease); }
+  .primario { background: linear-gradient(135deg,var(--azure),var(--deep)); color: #fff;
+    box-shadow: 0 8px 20px rgba(0,137,206,.3); }
+  .primario:hover { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(0,137,206,.4); }
+  .secundario { background: #fff; color: var(--deep); border: 1.5px solid var(--line); box-shadow: var(--sh-sm); }
+  .secundario:hover { border-color: var(--azure); color: var(--azure); }
+  .perigo { background: #fff; color: var(--danger); border: 1.5px solid var(--danger-line); }
+  .usuario-logado { margin-left: auto; font-size: 12px; color: var(--mut); font-weight: 700; }
+  #btn-novo { background:#fff; color:var(--deep); border:0; font-weight:800;
+    box-shadow:0 4px 12px rgba(0,0,0,.18); }
+  #btn-novo:hover { transform: translateY(-1px); color:var(--deep); }
 
   /* kanban */
   .kanban { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
   .coluna { background: var(--coluna-bg); border-radius: 8px; padding: 8px; min-width: 240px; flex: 1 0 240px; }
-  .coluna h3 { font-size: 13px; display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px; }
-  .coluna h3 .cont { background: #fff; border-radius: 10px; padding: 1px 8px; font-size: 12px; color: var(--texto-suave); }
+  .coluna h3 { font-size: 13px; display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px;
+    font-family: var(--font-head); font-weight: 800; color: var(--deep); text-transform: uppercase;
+    letter-spacing: .8px; font-size: 11.5px; }
+  /* indicador de estágio — bolinha colorida antes do título (P2 badges) */
+  .coluna h3::before { content: ""; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--mut); box-shadow: 0 0 0 3px rgba(92,113,137,.15); }
+  .coluna[data-estagio="novo"] h3::before { background: var(--mut); }
+  .coluna[data-estagio="ligacao_feita"] h3::before { background: var(--sky); box-shadow: 0 0 0 3px rgba(91,193,234,.18); }
+  .coluna[data-estagio="qualificado"] h3::before { background: var(--azure); box-shadow: 0 0 0 3px rgba(0,137,206,.18); }
+  .coluna[data-estagio="negociacao"] h3::before { background: var(--amber); box-shadow: 0 0 0 3px rgba(180,83,9,.18); }
+  .coluna[data-estagio="fechado"] h3::before { background: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+  .coluna[data-estagio="perdido"] h3::before { background: var(--danger); box-shadow: 0 0 0 3px rgba(220,38,38,.18); }
+  .coluna h3 .cont { background: #fff; border-radius: 999px; border: 1px solid var(--line);
+    padding: 1px 8px; font-size: 11px; color: var(--mut); font-weight: 800; }
   .coluna .cards { display: flex; flex-direction: column; gap: 6px; min-height: 48px; }
   .coluna.over { outline: 2px dashed var(--destaque); outline-offset: -2px; }
   .card-lead { background: #fff; border: 1px solid var(--borda); border-radius: 8px;
@@ -93,90 +104,68 @@
     .coluna.so-mobile-hidden { display: none; }
   }
 
-  /* modal */
-  .modal-fundo { display: none; position: fixed; inset: 0; background: rgba(30,27,22,.55);
-    align-items: flex-end; justify-content: center; z-index: 50; }
-  .modal-fundo.aberto { display: flex; }
-  .modal { background: #fff; border-radius: 12px 12px 0 0; max-width: 660px; width: 100%;
-    max-height: 92vh; overflow-y: auto; padding: 16px; }
-  @media (min-width: 640px) {
-    .modal-fundo { align-items: center; padding: 16px; }
-    .modal { border-radius: 10px; }
-  }
-  .modal h2 { font-size: 16px; margin-bottom: 2px; }
-  .modal .sub { color: var(--texto-suave); font-size: 12px; margin-bottom: 10px; }
-  .modal .fechar { float: right; background: var(--coluna-bg); border: none; border-radius: 6px;
-    padding: 7px 11px; cursor: pointer; font-weight: 700; font-size: 13px; }
+  /* modal: base (.modal-fundo/.modal/.fechar/h2/.sub) vem de design-tokens.css
+     (incl. bottom-sheet no mobile + barra superior em gradiente). Aqui só o
+     que é específico do funil: */
 
-  /* ações rápidas — topo, sempre visível */
-  .acoes-rapidas { position: sticky; top: -16px; background: #fff; padding: 8px 0;
-    display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--borda); z-index: 2; }
-  .acoes-rapidas a.btn, .acoes-rapidas button { flex: 1; min-width: 110px; padding: 10px 8px;
-    border: 1px solid var(--borda); border-radius: 6px; background: var(--coluna-bg);
-    font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none;
-    display: inline-flex; align-items: center; justify-content: center; color: var(--texto); }
-  .acoes-rapidas a.btn:hover, .acoes-rapidas button:hover { border-color: var(--texto-suave); }
+  /* ações rápidas — topo do modal, sempre visível */
+  .acoes-rapidas { position: sticky; top: -24px; background: #fff; padding: 10px 0;
+    display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); z-index: 2; }
+  .acoes-rapidas a.btn, .acoes-rapidas button { flex: 1; min-width: 110px; padding: 11px 8px;
+    border: 1.5px solid var(--line); border-radius: 12px; background: #fff;
+    font: 700 13px var(--font-body); cursor: pointer; text-align: center; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--deep);
+    box-shadow: var(--sh-sm); transition: .25s var(--ease); min-height: 44px; }
+  .acoes-rapidas a.btn:hover, .acoes-rapidas button:hover { border-color: var(--azure); color: var(--azure); }
+  .acoes-rapidas .btn-off { opacity: .4; }
 
-  .bloco { border-top: 1px solid var(--borda); margin-top: 12px; padding-top: 10px; }
-  .bloco h3 { font-size: 14px; margin-bottom: 6px; }
+  .bloco { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+  .bloco h3 { font-size: 13px; margin-bottom: 8px; color: var(--deep); font-weight: 800; }
   .campo { margin-bottom: 6px; }
-  .campo b { display: block; font-size: 11px; text-transform: uppercase; color: var(--texto-suave); }
-  .campo span { font-size: 14px; overflow-wrap: anywhere; }
+  .campo b { display: block; font-size: 11px; text-transform: uppercase; color: var(--mut); letter-spacing: .4px; }
+  .campo span { font-size: 14px; overflow-wrap: anywhere; color: var(--ink); }
   .linha-campo { display: flex; justify-content: space-between; gap: 10px; font-size: 13px;
-    border-bottom: 1px dotted var(--borda); padding: 3px 0; }
-  .linha-campo b { color: var(--texto-suave); font-weight: 600; white-space: nowrap; }
-  .linha-campo span { text-align: right; overflow-wrap: anywhere; }
-  .bloco label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 3px; color: var(--texto-suave); }
-  .bloco textarea, .bloco input[type=text], .bloco input[type=number], .bloco select {
-    width: 100%; }
-  .bloco textarea { min-height: 52px; }
+    border-bottom: 1px dashed var(--line); padding: 5px 0; }
+  .linha-campo b { color: var(--mut); font-weight: 700; white-space: nowrap; }
+  .linha-campo span { text-align: right; overflow-wrap: anywhere; color: var(--ink); }
+  .bloco label { display: block; font-size: 11px; font-weight: 800; margin: 10px 0 4px; color: var(--mut);
+    text-transform: uppercase; letter-spacing: .6px; }
+  .bloco textarea, .bloco input[type=text], .bloco input[type=number], .bloco select { width: 100%; }
   .check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; font-weight: 600; }
-  .check input { width: 18px; height: 18px; }
-  .linha { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .linha button, .linha a.btn { flex: 1; min-width: 130px; padding: 10px 12px; border: none;
-    border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; text-align: center;
+  .linha { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .linha button, .linha a.btn { flex: 1; min-width: 130px; padding: 12px; border: 0;
+    border-radius: 12px; font: 800 13px var(--font-body); cursor: pointer; text-align: center;
     text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--texto); color: #fff; }
+    background: linear-gradient(135deg,var(--azure),var(--deep)); color: #fff;
+    box-shadow: 0 8px 20px rgba(0,137,206,.3); }
 
-  /* timeline — mais recente primeiro, ícone por tipo, status visual (V3) */
-  .timeline { list-style: none; margin-top: 6px; }
-  .timeline li { position: relative; padding: 0 0 10px 22px; font-size: 13px;
-    border-left: 2px solid var(--borda); margin-left: 6px; }
+  /* timeline — mais recente primeiro, ícone por tipo, status visual */
+  .timeline { list-style: none; margin-top: 8px; }
+  .timeline li { position: relative; padding: 0 0 10px 22px; font-size: 13px; color: var(--ink-2);
+    border-left: 2px solid var(--line); margin-left: 6px; }
   .timeline li::before { content: ""; position: absolute; left: -6px; top: 4px; width: 9px; height: 9px;
-    border-radius: 50%; background: var(--texto-suave); }
-  .timeline li.st-agendada::before { background: #fff; border: 2px solid var(--destaque); }
-  .timeline li.st-realizada::before { background: var(--ok); }
+    border-radius: 50%; background: var(--mut); }
+  .timeline li.st-agendada::before { background: #fff; border: 2px solid var(--amber); }
+  .timeline li.st-realizada::before { background: var(--green); }
   .timeline li.st-cancelada { opacity: .55; }
-  .timeline li.st-cancelada::before { background: var(--borda); }
-  .timeline li .quando { color: var(--texto-suave); font-size: 11px; }
-  .timeline li .obs { color: var(--texto-suave); font-size: 12px; }
-  .timeline .acao-concluir { margin-left: 8px; padding: 2px 8px; font-size: 11px;
-    border: 1px solid var(--borda); border-radius: 5px; background: #fff; cursor: pointer; }
-  /* B25: estilos mínimos das classes que o JS usa (cosmético) */
-  .tagchip { background: var(--coluna-bg); border-radius: 4px; padding: 1px 6px;
-    font-size: 11px; font-weight: 600; color: var(--texto-suave); }
+  .timeline li.st-cancelada::before { background: var(--line-2); }
+  .timeline li .quando { color: var(--mut); font-size: 11px; }
+  .timeline .acao-concluir { margin-left: 8px; padding: 6px 12px; font-size: 11px; font-weight: 800;
+    border: 1.5px solid var(--line); border-radius: 8px; background: #fff; color: var(--deep); cursor: pointer; }
+  .tagchip { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px;
+    font-size: 11px; font-weight: 700; color: var(--mut); }
   .fotos { margin-top: 8px; }
-  .vazio-acao { font-size: 13px; color: var(--destaque); font-weight: 600; margin: 6px 0; }
+  .vazio-acao { font-size: 13px; color: var(--amber); font-weight: 700; margin: 6px 0; }
 
-  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
-    padding: 12px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #fff;
-    max-width: 92vw; display: none; }
-  .toast.ok { background: var(--ok); display: block; }
-  .toast.erro { background: var(--erro); display: block; }
-  .erro-campo { background: #fef2f2; border: 1px solid #fecaca; color: var(--erro);
-    padding: 8px 10px; border-radius: 6px; font-size: 13px; margin-top: 8px; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; font-size: 12px; color: var(--texto-suave); padding: 6px 0; min-height: 40px; }
-  pre.ocr { background: #26231f; color: #e7e2da; font-size: 11px; line-height: 1.5; padding: 8px;
-    border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
   .novo-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .novo-campos label { font-size: 12px; color: var(--texto-suave); display: block; margin-bottom: 2px; }
+  .novo-campos label { font-size: 11px; color: var(--mut); display: block; margin-bottom: 2px;
+    font-weight: 800; text-transform: uppercase; letter-spacing: .6px; }
   .novo-campos input { width: 100%; }
   @media (max-width: 520px) { .novo-campos { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<header>
+<header class="topbar">
   <h1>Funil de Vendas</h1>
   <nav>
     <button class="secundario" id="btn-novo">+ Novo Lead</button>
@@ -186,7 +175,11 @@
   </nav>
 </header>
 <main>
-  <div class="painel metricas" id="metricas">Carregando métricas…</div>
+  <div class="painel metricas" id="metricas">
+    <span class="skeleton" style="width:110px;height:26px;border-radius:999px;display:inline-block"></span>
+    <span class="skeleton" style="width:90px;height:26px;border-radius:999px;display:inline-block"></span>
+    <span class="skeleton" style="width:120px;height:26px;border-radius:999px;display:inline-block"></span>
+  </div>
   <div class="painel filtros">
     <button class="tgl" id="f-atrasados" title="Próxima ação vencida">⚠️ Atrasados</button>
     <button class="tgl" id="f-retorno" title="Retorno agendado para hoje">📅 Retorno hoje</button>
@@ -205,7 +198,20 @@
     <span class="usuario-logado" id="usuario-logado"></span>
   </div>
   <select class="estagio-mobile" id="m-estagio" title="Estágio"></select>
-  <div class="kanban" id="kanban">Carregando leads…</div>
+  <div class="kanban" id="kanban">
+    <div class="coluna" style="border:none;background:transparent"><h3>&nbsp;</h3>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px;margin-bottom:8px"></span>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px;margin-bottom:8px"></span>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px"></span>
+    </div>
+    <div class="coluna" style="border:none;background:transparent"><h3>&nbsp;</h3>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px;margin-bottom:8px"></span>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px"></span>
+    </div>
+    <div class="coluna" style="border:none;background:transparent"><h3>&nbsp;</h3>
+      <span class="skeleton" style="height:64px;display:block;border-radius:12px"></span>
+    </div>
+  </div>
   <div class="painel">
     <details id="relatorio-perdas">
       <summary style="font-size:14px;font-weight:700;color:var(--texto)">📉 Relatório de perdas</summary>
