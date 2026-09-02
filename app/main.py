@@ -32,6 +32,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTasks
 
 from . import auth, cartao as cartao_mod, db, imagem as img_mod, ocr as ocr_mod
 from .ollama_client import OLLAMA_MODEL, listar_modelos
@@ -120,6 +121,39 @@ def _limite_estourado(request: Request, chave: str, maximo: int, janela: float) 
 
 
 _RATE_LIMIT: dict[tuple[str, str], list[float]] = defaultdict(list)
+
+
+async def _analisar_cartao_em_off(
+    lead_id: int,
+    frente_bytes: bytes | None,
+    verso_bytes: bytes | None,
+) -> None:
+    """Opção B (plano_bdr_hibrido.md): lê o cartão EM SEGUNDO PLANO.
+
+    Roda depois do POST /leads responder ao BDR (não trava a captura na rua):
+    processa OCR + VLM e, quando pronto, grava as INFORMAÇÕES DO CARTÃO no
+    lead (tabela lead_cartao) SEM tocar nos campos manuais. Se falhar, o lead
+    e a foto continuam salvos — só fica sem o JSON do cartão (log do erro).
+    """
+    if not frente_bytes:
+        return
+    try:
+        analise = await cartao_mod.analisar(frente_bytes, verso_bytes)
+    except Exception as exc:  # nunca derrubar nada: é background
+        logger.exception("Análise off do cartão falhou (lead #%s): %r", lead_id, exc)
+        return
+    try:
+        info = analise.info
+        # aproveita as fotos já gravadas no lead (não duplica arquivo)
+        lead = db.buscar_lead(lead_id)
+        caminhos = (lead or {}).get("foto_frente_path") or ""
+        info.setdefault("imagens", {})
+        info["imagens"]["frente"] = caminhos
+        info["imagens"]["verso"] = (lead or {}).get("foto_verso_path") or ""
+        db.salvar_cartao(lead_id, info)
+        logger.info("Cartão do lead #%s lido em background (ocr=%s)", lead_id, analise.ocr_ok)
+    except Exception as exc:
+        logger.exception("Falha ao gravar cartão off do lead #%s: %r", lead_id, exc)
 
 
 def _verdadeiro(valor) -> bool:
@@ -448,8 +482,13 @@ def listar_leads_publico(limite: int = 20):
 
 
 @app.post("/leads")
-async def salvar_lead_completo(request: Request):
+async def salvar_lead_completo(request: Request, background_tasks: BackgroundTasks):
     """Persiste o formulário completo (campos manuais + INFORMAÇÕES DO CARTÃO).
+
+    Opção B (plano_bdr_hibrido.md): quando a captura envia uma FOTO nova e o
+    cartão ainda não foi lido (sem cartao_json), o lead é salvo na hora e a
+    leitura (OCR + IA) roda EM SEGUNDO PLANO — o BDR não fica preso na tela.
+    Quando fica pronto, o JSON do cartão é gravado no lead sem tocar no manual.
 
     Se vier 'lead_id' de um lead já salvo, atualiza em vez de duplicar.
 
@@ -500,6 +539,10 @@ async def salvar_lead_completo(request: Request):
         if valor is not None and not _eh_arquivo(valor):
             dados[campo] = str(valor).strip()
 
+    # Opção B (plano_bdr_hibrido.md): bytes ORIGINAIS das fotos novas enviadas
+    # no POST /leads — usados pela análise OFF em background (a versão salva em
+    # data/fotos é reduzida p/ 1024px; o OCR lê melhor no original, até 1800px).
+    fotos_originais: dict[str, bytes] = {}
     for lado, campo_foto in (("frente", "foto_frente"), ("verso", "foto_verso")):
         arquivo = form.get(campo_foto)
         if _eh_arquivo(arquivo):
@@ -516,6 +559,7 @@ async def salvar_lead_completo(request: Request):
                 if antigo_caminho and antigo_caminho != novo_caminho:
                     _apagar_foto(antigo_caminho)
                 dados[f"foto_{lado}_path"] = novo_caminho
+                fotos_originais[lado] = conteudo
             await arquivo.close()
 
     try:
@@ -588,6 +632,16 @@ async def salvar_lead_completo(request: Request):
             cartao["imagens"]["frente"] = dados.get("foto_frente_path") or ""
             cartao["imagens"]["verso"] = dados.get("foto_verso_path") or ""
             db.salvar_cartao(lead_id, cartao)
+        # Opção B: fotos novas SEM cartão já lido → leitura em background. O
+        # lead já está salvo; a análise não bloqueia o BDR. Reusa o original
+        # (bytes) para não perder qualidade de OCR (data/fotos guarda 1024px).
+        elif fotos_originais.get("frente"):
+            background_tasks.add_task(
+                _analisar_cartao_em_off,
+                lead_id,
+                fotos_originais.get("frente"),
+                fotos_originais.get("verso"),
+            )
     except Exception as exc:
         logger.exception("Falha ao salvar lead completo: %r", exc)
         return JSONResponse(

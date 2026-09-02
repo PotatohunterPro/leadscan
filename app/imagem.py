@@ -1,5 +1,5 @@
 """
-Pré-processamento de imagem para OCR e para o modelo de visão (LFM2.5-VL-450M).
+Pré-processamento de imagem para OCR e para o modelo de visão (LFM2.5-VL).
 
 Regras do projeto (máquina com ~1 GB de RAM):
   * nada de OpenCV/numpy/PyTorch — só Pillow;
@@ -24,7 +24,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageErr
 logger = logging.getLogger("leadscan.imagem")
 
 # ---------------------------------------------------------------- limites
-MAX_LADO_VLM = 1024          # entrada do LFM2.5-VL-450M (mesmo valor de antes)
+MAX_LADO_VLM = 1024          # entrada do modelo de visão local (LFM2.5-VL)
 MAX_LADO_OCR = 1800          # teto para o Tesseract (mantém memória sob controle)
 MIN_LADO_OCR = 1100          # upscale de fotos pequenas: texto minúsculo não é lido
 QUALIDADE_JPEG = 80

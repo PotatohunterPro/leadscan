@@ -1,7 +1,7 @@
 """
 Análise do cartão de visita — orquestra o pipeline inteiro:
 
-    FOTO -> PRÉ-PROCESSAMENTO -> OCR -> LFM2.5-VL-450M -> FUSÃO
+    FOTO -> PRÉ-PROCESSAMENTO -> OCR -> LFM2.5-VL -> FUSÃO
          -> VALIDAÇÃO -> 📇 INFORMAÇÕES DO CARTÃO
 
 O resultado é uma camada COMPLEMENTAR do lead: nada aqui sobrescreve o que o
@@ -488,7 +488,7 @@ async def analisar(
 
     texto_ocr = "\n".join(textos).strip()
 
-    # --- interpretação visual (LFM2.5-VL-450M)
+    # --- interpretação visual (LFM2.5-VL local)
     imagens = [jpeg_frente] + ([jpeg_verso] if jpeg_verso else [])
     bruto_vlm: dict = {}
     erro_vlm = ""

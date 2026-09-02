@@ -3,7 +3,7 @@ OCR local com Tesseract (pytesseract) — roda dentro do container, sem rede.
 
 Papel do OCR no pipeline: ler com precisão o que é TEXTO/NÚMERO (telefone,
 CEP, e-mail, URL, endereço). A interpretação (qual é o nome da empresa, o que
-é cargo, como o endereço se organiza) continua com o LFM2.5-VL-450M.
+é cargo, como o endereço se organiza) continua com o modelo de visão LFM2.5-VL.
 
 Se o binário do Tesseract não estiver instalado, nada quebra: as funções
 devolvem texto vazio e um aviso — o VLM continua funcionando sozinho.

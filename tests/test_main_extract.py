@@ -355,5 +355,50 @@ class TestAdminDetalhe(unittest.TestCase):
         self.assertIsNone(detalhe["lead"]["cartao"])
 
 
+class TestOpcaoBLeituraOff(unittest.TestCase):
+    """Opção B (plano_bdr_hibrido.md): salvar com foto devolve rápido e a leitura
+    do cartão roda em 2º plano, anexando as 📇 sem tocar no manual."""
+
+    def setUp(self):
+        self.client = TestClient(app)
+        self.client.__enter__()
+        _login_admin(self.client)
+        self.patch_analisar = patch.object(main_mod.cartao_mod, "analisar", _analisar_fake)
+        self.patch_analisar.start()
+
+    def tearDown(self):
+        self.patch_analisar.stop()
+        self.client.__exit__(None, None, None)
+
+    def test_salvar_com_foto_sem_cartao_json_anexa_e_le_off(self):
+        """POST /leads com foto nova e SEM cartao_json: o lead é salvo com a
+        foto e o cartão é lido EM 2º PLANO (BackgroundTasks do Starlette roda
+        após a resposta) — sem que o cliente precise mandar o JSON pronto."""
+        resp = self.client.post("/leads", data={
+            "nome_empresa": "Leitura Off",
+            "nome_contato": "Ana",
+            "whatsapp": "11999998888",
+        }, files={"foto_frente": ("frente.jpg", JPEG_TINHO, "image/jpeg")})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("id", resp.json())
+        lead = db.buscar_lead(resp.json()["id"])
+        self.assertTrue(lead["foto_frente_path"])          # foto foi anexada
+        self.assertIsNotNone(db.buscar_cartao(lead["id"]))  # leitura off anexou as 📇
+
+    def test_analise_off_nao_toca_manual(self):
+        resp = self.client.post("/leads", data={
+            "nome_empresa": "Manual Dono",
+            "nome_contato": "Zé",
+            "whatsapp": "11999998888",
+        }, files={"foto_frente": ("frente.jpg", JPEG_TINHO, "image/jpeg")})
+        lead_id = resp.json()["id"]
+        lead = db.buscar_lead_funil(lead_id)
+        cartao = lead["cartao"] or {}
+        self.assertEqual(cartao.get("empresa", {}).get("nome"), "Arte & Tear")  # 📇 veio da leitura
+        self.assertEqual(lead["nome_empresa"], "Manual Dono")                   # manual intocado
+        self.assertEqual(lead["nome_contato"], "Zé")
+        self.assertTrue(lead["foto_frente_path"])                               # foto preservada
+
+
 if __name__ == "__main__":
     unittest.main()

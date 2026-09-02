@@ -57,7 +57,7 @@ if ! command -v ollama >/dev/null; then
     export PATH="$PATH:/usr/local/bin"
 fi
 
-MODEL="hf.co/LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0"
+MODEL="lfm2.5-vl:latest"
 if ! ollama list | grep -q "$MODEL"; then
     info "Baixando modelo $MODEL (pode levar alguns minutos)..."
     ollama pull "$MODEL"

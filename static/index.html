@@ -161,37 +161,10 @@
 </header>
 
 <main>
-  <!-- ============ CAPTURA ============ -->
-  <section class="cartao" id="secao-captura">
-    <h2>1 · Foto do cartão</h2>
-    <div class="foto-box" id="foto-frente-box">
-      <input type="file" id="foto-frente" accept="image/*" capture="environment">
-      <div class="rotulo">📷 Frente do cartão <span class="badge">abre a câmera</span></div>
-      <div class="sub">Toque para tirar ou escolher a foto — a IA lê os dados na hora</div>
-    </div>
-    <div class="foto-box" id="foto-verso-box">
-      <input type="file" id="foto-verso" accept="image/*" capture="environment">
-      <div class="rotulo">📄 Verso do cartão <span class="sub">(opcional)</span></div>
-      <div class="sub">Se o cartão tiver informações atrás, fotografe também</div>
-    </div>
-    <div class="previews" id="previews"></div>
-    <div class="spinner" id="spinner"><span class="bola"></span> Analisando com IA…</div>
-    <div class="aviso" id="aviso"></div>
-    <div class="linha-botoes">
-      <button class="secundario" id="btn-sem-foto">✍️ Preencher sem foto</button>
-    </div>
-  </section>
-
-  <!-- ============ INFORMAÇÕES DO CARTÃO (item 3/5/19 do V2) ============ -->
-  <section class="cartao secao-cartao-info" id="secao-cartao-info" style="display:none">
-    <h2>2 · 📇 Informações do cartão <span class="bot">🤖 Extraído automaticamente da foto</span></h2>
-    <div id="conteudo-cartao"></div>
-  </section>
-
-  <!-- ============ FORMULÁRIO ============ -->
-  <section class="cartao" id="secao-form" style="display:none">
-    <h2>3 · 👤 Dados do lead</h2>
-    <p class="dica-secao">Informações coletadas pelo vendedor — o cartão nunca substitui estes campos</p>
+  <!-- ============ 1 · DADOS DO LEAD (manual é o dono — sempre visível) ============ -->
+  <section class="cartao" id="secao-form">
+    <h2>1 · 👤 Dados do lead</h2>
+    <p class="dica-secao">Preencha o essencial aqui — é o que vale. A foto do cartão é só um complemento.</p>
 
     <label class="req">Nome da Loja / Fantasia</label>
     <input type="text" id="nome_empresa" placeholder="Ex.: Padaria Pão Dourado">
@@ -303,12 +276,30 @@
     <div class="aviso" id="aviso-form"></div>
 
     <div class="linha-botoes">
-      <button class="secundario" id="btn-salvar">💾 Salvar lead</button>
+      <button class="primario" id="btn-salvar">💾 Salvar lead</button>
       <button class="wa" id="btn-whatsapp">📲 Enviar no WhatsApp</button>
     </div>
     <div class="linha-botoes" id="linha-novo-lead" style="display:none">
       <button class="secundario" id="btn-novo-lead">🆕 Novo lead</button>
     </div>
+  </section>
+
+  <!-- ============ 2 · FOTO DO CARTÃO (opcional — lida em 2º plano pelo servidor) ============ -->
+  <section class="cartao" id="secao-captura">
+    <h2>2 · 📷 Foto do cartão <span class="badge">opcional</span></h2>
+    <p class="dica-secao">Tirar a foto não atrasa o salvar: ela vai junto no lead e o servidor lê o cartão em 2º plano (as informações aparecem depois, como 📇 adicional).</p>
+    <div class="foto-box" id="foto-frente-box">
+      <input type="file" id="foto-frente" accept="image/*" capture="environment">
+      <div class="rotulo">📷 Frente do cartão <span class="badge">abre a câmera</span></div>
+      <div class="sub">Toque para tirar ou escolher a foto</div>
+    </div>
+    <div class="foto-box" id="foto-verso-box">
+      <input type="file" id="foto-verso" accept="image/*" capture="environment">
+      <div class="rotulo">📄 Verso do cartão <span class="sub">(opcional)</span></div>
+      <div class="sub">Se o cartão tiver informações atrás, fotografe também</div>
+    </div>
+    <div class="previews" id="previews"></div>
+    <div class="aviso" id="aviso"></div>
   </section>
 
   <!-- ============ ÚLTIMOS LEADS ============ -->
@@ -317,7 +308,7 @@
     <div id="lista-leads"><div class="vazio">Carregando…</div></div>
   </section>
 
-  <footer>LeadScan · IA local via Ollama · dados ficam no seu servidor</footer>
+  <footer>HUB Solução · captura de leads · dados ficam no seu servidor</footer>
 </main>
 
 <script>
@@ -341,32 +332,20 @@
   // ---------- captura de fotos ----------
   function limparPreviews() { $("previews").innerHTML = ""; }
 
+  // Opção B (100% off): selecionar a foto NÃO analisa na hora — só anexa ao
+  // lead. O servidor lê o cartão em segundo plano depois do salvar. Os dados
+  // manuais digitados NUNCA são tocados pela foto.
   function aoSelecionarFrente(e) {
     var arquivo = e.target.files && e.target.files[0];
     if (!arquivo) return;
-    // novo cartão fotografado = novo lead: avisa antes de descartar dados não salvos (U4)
-    if (formularioTemDados() &&
-        !confirm("Há dados no formulário. Fotografar outro cartão vai apagá-los. Continuar?")) {
-      e.target.value = "";   // permite escolher o mesmo arquivo depois
-      return;
-    }
-    // novo cartão fotografado = novo lead (evita sobrescrever o anterior e acumular previews)
-    estado.leadId = null;
-    estado.cartao = null;
-    estado.caminhos = null;
     fotos.verso = null;
     $("foto-verso-box").classList.remove("ativo");
     limparPreviews();
-    var aviso = $("aviso");
-    aviso.className = "aviso";
-    aviso.textContent = "";
-    mostrarAvisoForm("", "");
     $("linha-novo-lead").style.display = "none";
     fotos.frente = arquivo;
     $("foto-frente-box").classList.add("ativo");
-    $("secao-cartao-info").style.display = "none";
     adicionarPreview(arquivo, "frente");
-    processarFoto(arquivo);
+    mostrarAviso("📷 Foto anexada. Salve o lead — o cartão será lido em 2º plano pelo servidor.", "ok");
   }
 
   function aoSelecionarVerso(e) {
@@ -375,8 +354,6 @@
     fotos.verso = arquivo;
     $("foto-verso-box").classList.add("ativo");
     adicionarPreview(arquivo, "verso");
-    // frente + verso = o MESMO cartão (item 7): re-analisa combinando as duas
-    if (fotos.frente) processarFoto(fotos.frente);
   }
 
   function adicionarPreview(arquivo, lado) {
@@ -386,216 +363,11 @@
     $("previews").appendChild(img);
   }
 
-  // ---------- extração com IA ----------
-  var versaoExtracao = 0;   // só a extração mais recente pode aplicar o resultado
-  function processarFoto(arquivo) {
-    var minha = ++versaoExtracao;
-    mostrarAviso("", "");
-    mostrarAvisoForm("", "");
-    var spinner = $("spinner");
-    spinner.classList.add("visivel");
-    $("btn-whatsapp").disabled = true;
-
-    var fd = new FormData();
-    fd.append("image", arquivo);
-    if (fotos.verso) fd.append("verso", fotos.verso);
-
-    fetch("/extract", { method: "POST", body: fd })
-      .then(function (resp) { return resp.json().then(function (dados) { return { ok: resp.ok, dados: dados }; }); })
-      .then(function (r) {
-        if (minha !== versaoExtracao) return;  // já começou uma extração mais nova
-        spinner.classList.remove("visivel");
-        if (r.ok && r.dados.success) {
-          // regra 9: a análise NÃO cria lead nem preenche o formulário — só
-          // preenche a seção 📇; quem conclui é o 💾 Salvar Lead.
-          estado.leadId = null;
-          estado.cartao = r.dados.cartao || null;
-          estado.caminhos = r.dados.fotos || {};
-          renderizarCartao(estado.cartao);
-          mostrarAviso("✅ Cartão lido — confira as informações abaixo e use [ Usar no Lead ] quando quiser copiar.", "ok");
-          $("secao-form").style.display = "block";
-          rolarAte($("secao-cartao-info"));
-        } else {
-          mostrarAviso("Não consegui ler o cartão: " + (r.dados.error || "erro desconhecido"), "erro");
-        }
-      })
-      .catch(function (erro) {
-        if (minha !== versaoExtracao) return;
-        spinner.classList.remove("visivel");
-        mostrarAviso("Falha na comunicação com o servidor: " + erro, "erro");
-      })
-      .finally(function () { if (minha === versaoExtracao) $("btn-whatsapp").disabled = false; });
-  }
-
-  // ---------- seção 📇 INFORMAÇÕES DO CARTÃO ----------
-  function tipoTelefone(c, valor) {
-    var alvo = String(valor || "").replace(/\D/g, "");
-    if (!alvo) return "";
-    var t = (c.telefones || []).filter(function (x) {
-      return String(x.numero || "").replace(/\D/g, "") === alvo;
-    })[0];
-    return (t && t.tipo) ? t.tipo : "";
-  }
-
-  function itemCartao(rotulo, valor, campo, botaoTexto, badge) {
-    var h = '<div class="item-cartao"><div class="txt"><span class="rotulo">' + esc(rotulo) + "</span>" +
-      '<span class="valor">' + esc(valor);
-    if (badge) h += ' <span class="badge">' + esc(badge) + "</span>";
-    h += "</span></div>";
-    if (botaoTexto) {
-      h += '<button class="usar" data-campo="' + esc(campo) + '" data-valor="' + esc(valor) + '">' +
-        esc(botaoTexto) + "</button>";
-    }
-    h += "</div>";
-    return h;
-  }
-
-  function renderizarCartao(c) {
-    var box = $("secao-cartao-info");
-    if (!c) { box.style.display = "none"; return; }
-    box.style.display = "block";
-
-    var h = '<div id="aviso-cartao" class="aviso-cartao"></div>';
-    if (c.avisos && c.avisos.length) {
-      h += '<div class="aviso-ia">' + c.avisos.map(esc).join("<br>") + "</div>";
-    }
-
-    // blocos montados a partir de cartao.sugestoes (pares campo→valor)
-    var sugs = c.sugestoes || [];
-    var grupos = [
-      { titulo: "Empresa", campos: ["nome_empresa", "ramo_atividade"] },
-      { titulo: "Pessoa", campos: ["nome_contato", "cargo"] },
-      { titulo: "Telefones", campos: ["whatsapp", "telefone"] },
-      { titulo: "E-mails e sites", campos: ["email", "site"] },
-      { titulo: "Redes sociais", campos: ["redes_sociais"] },
-      { titulo: "Endereço", campos: ["endereco", "cidade"] }
-    ];
-    grupos.forEach(function (g) {
-      var itens = sugs.filter(function (s) { return g.campos.indexOf(s.campo) !== -1; });
-      if (!itens.length) return;
-      h += '<div class="grupo-cartao"><div class="titulo">' + esc(g.titulo) + "</div>";
-      itens.forEach(function (s) {
-        var badge = (s.campo === "whatsapp" || s.campo === "telefone") ? tipoTelefone(c, s.valor) : "";
-        h += itemCartao(ROTULOS_CAMPO[s.campo] || s.campo, s.valor, s.campo, s.rotulo, badge);
-      });
-      h += "</div>";
-    });
-
-    // detectado mas sem campo próprio no formulário (itens 3/14 do V2)
-    var extras = [];
-    if (c.empresa && c.empresa.nome_fantasia && c.empresa.nome_fantasia !== (c.empresa.nome || "")) {
-      extras.push({ rotulo: "Nome fantasia", valor: c.empresa.nome_fantasia });
-    }
-    if (c.documentos && c.documentos.cnpj) extras.push({ rotulo: "CNPJ", valor: c.documentos.cnpj });
-    (c.outras_informacoes || []).forEach(function (o) {
-      extras.push({ rotulo: "Outra informação", valor: (o && o.texto) || o });
-    });
-    if (extras.length) {
-      h += '<div class="grupo-cartao"><div class="titulo">Outras informações detectadas</div>';
-      extras.forEach(function (x) { h += itemCartao(x.rotulo, x.valor, null, null, null); });
-      h += "</div>";
-    }
-
-    // "[ Ver texto original ]" (item 15)
-    h += '<details class="ocr-detalhes"><summary>[ Ver texto original ]</summary>';
-    var ocr = c.ocr || {};
-    if (!ocr.disponivel) {
-      h += '<div class="vazio">OCR indisponível neste servidor — as informações vieram apenas da análise visual da IA.</div>';
-    } else {
-      if (ocr.frente) h += '<div class="ocr-bloco"><b>— FRENTE —</b><pre class="ocr">' + esc(ocr.frente) + "</pre></div>";
-      if (ocr.verso) h += '<div class="ocr-bloco"><b>— VERSO —</b><pre class="ocr">' + esc(ocr.verso) + "</pre></div>";
-      if (!ocr.frente && !ocr.verso) h += '<div class="vazio">Nenhum texto foi lido pelo OCR.</div>';
-    }
-    h += "</details>";
-
-    $("conteudo-cartao").innerHTML = h;
-  }
-
-  // ---------- [ Usar no Lead ] (item 5) ----------
-  function avisarCartao(msg, tipo) {
-    var el = $("aviso-cartao");
-    if (!el) return;
-    el.className = "aviso-cartao " + (tipo || "");
-    el.textContent = msg;
-  }
-
-  function setarSelect(select, valor) {
-    var alvo = String(valor).trim().toLowerCase();
-    for (var i = 0; i < select.options.length; i++) {
-      var op = select.options[i].value.toLowerCase();
-      if (op === alvo || (alvo.length > 3 && (op.indexOf(alvo) !== -1 || alvo.indexOf(op) !== -1))) {
-        select.value = select.options[i].value;
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function usarNoLead(campo, valor) {
-    if (!campo || !valor) return;
-    if (campo === "cidade") {
-      // não existe input de cidade — concatena no endereço (como sempre foi)
-      var end = $("endereco");
-      var atual = (end.value || "").trim();
-      if (atual.indexOf(valor) !== -1) {
-        avisarCartao("A cidade já consta no campo endereço.", "atencao");
-        return;
-      }
-      end.value = atual ? atual + " — " + valor : valor;
-      avisarCartao("Cidade adicionada ao endereço: " + valor, "ok");
-      return;
-    }
-    if (campo === "cargo") {
-      var selCargo = $("cargo");
-      if (setarSelect(selCargo, valor)) {
-        avisarCartao("Cargo copiado para o lead: " + valor, "ok");
-      } else {
-        avisarCartao("Cargo \"" + valor + "\" não está na lista — preencha manualmente.", "atencao");
-      }
-      return;
-    }
-    if (campo === "ramo_atividade") {
-      var selRamo = $("ramo_atividade");
-      if (setarSelect(selRamo, valor)) {
-        avisarCartao("Segmento copiado para o lead: " + valor, "ok");
-      } else {
-        if (selRamo.value !== "Outro") selRamo.value = "Outro";
-        $("ramo_atividade_outro").style.display = "block";
-        $("ramo_atividade_outro").value = valor;
-        avisarCartao("Segmento copiado como \"Outro\": " + valor, "ok");
-      }
-      return;
-    }
-    var el = $(campo);
-    if (!el) {
-      avisarCartao("Campo \"" + campo + "\" não encontrado no formulário.", "erro");
-      return;
-    }
-    // regra 4: NUNCA sobrescreve o que o vendedor digitou
-    if ((el.value || "").trim()) {
-      avisarCartao("Campo já preenchido — apague o valor antes de copiar.", "atencao");
-      return;
-    }
-    el.value = valor;
-    avisarCartao("Copiado para o lead: " + valor, "ok");
-  }
+  // Opção B (100% off): a leitura do cartão acontece NO SERVIDOR em 2º plano.
+  // Aqui não há /extract nem seção de "conferir antes de salvar" — o manual é
+  // o dono; as 📇 do cartão aparecem depois, anexadas ao lead no funil.
 
   // ---------- novo lead (U4) ----------
-  function formularioTemDados() {
-    var textos = ["nome_empresa", "endereco", "nome_contato", "whatsapp", "telefone",
-      "email", "site", "redes_sociais", "anotacoes", "qual_sistema", "mensalidade",
-      "ramo_atividade_outro"];
-    for (var i = 0; i < textos.length; i++) {
-      if (($(textos[i]).value || "").trim()) return true;
-    }
-    var selects = ["cargo", "aceita_demonstracao", "ramo_atividade", "possui_sistema",
-      "suporte_bom", "trocaria_suporte", "trocaria_preco"];
-    for (var j = 0; j < selects.length; j++) {
-      if ($(selects[j]).value) return true;
-    }
-    return false;
-  }
-
   function resetarLead() {
     estado.leadId = null;
     estado.cartao = null;
@@ -615,11 +387,10 @@
     $("foto-frente-box").classList.remove("ativo");
     $("foto-verso-box").classList.remove("ativo");
     $("linha-novo-lead").style.display = "none";
-    $("secao-cartao-info").style.display = "none";
     limparPreviews();
     mostrarAviso("", "");
     mostrarAvisoForm("", "");
-    rolarAte($("secao-captura"));
+    rolarAte($("secao-form"));
   }
 
   // ---------- persistência ----------
@@ -673,7 +444,7 @@
   function montarTexto() {
     var v = function (id) { return ($(id).value || "").trim(); };
     var linhas = [];
-    linhas.push("🃏 *Novo Lead — LeadScan*");
+    linhas.push("🃏 *Novo Lead — HUB Solução*");
     linhas.push("────────────────");
     if (v("nome_empresa")) linhas.push("🏪 *Loja:* " + v("nome_empresa"));
     if (v("nome_contato")) linhas.push("👤 *Contato:* " + v("nome_contato") + (v("cargo") ? " (" + v("cargo") + ")" : ""));
@@ -861,12 +632,6 @@
   $("ramo_atividade").addEventListener("change", function () {
     $("ramo_atividade_outro").style.display = this.value === "Outro" ? "block" : "none";
   });
-  // "[ Usar no Lead ]" — delegação de eventos (os itens são re-renderizados)
-  $("secao-cartao-info").addEventListener("click", function (e) {
-    var btn = e.target.closest("button.usar");
-    if (!btn) return;
-    usarNoLead(btn.dataset.campo, btn.dataset.valor);
-  });
   function salvarLead() {
     if (salvando) return;                       // U1: guarda de duplo submit
     if (!validarFormulario()) return;
@@ -896,14 +661,6 @@
   }
   $("btn-salvar").addEventListener("click", salvarLead);
   $("btn-novo-lead").addEventListener("click", resetarLead);
-  $("btn-sem-foto").addEventListener("click", function () {
-    // U3: fluxo 100% manual — foto é opcional (V2: fonte A é a coleta manual)
-    estado.leadId = null;
-    $("secao-form").style.display = "block";
-    $("linha-novo-lead").style.display = "none";
-    mostrarAvisoForm("Preencha os dados manualmente — a foto é opcional.", "atenção");
-    rolarAte($("secao-form"));
-  });
   $("btn-whatsapp").addEventListener("click", enviarWhatsApp);
 
   carregarUltimosLeads();

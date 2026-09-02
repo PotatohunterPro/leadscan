@@ -24,7 +24,7 @@ OLLAMA_TAGS_URL = os.environ.get(
     "OLLAMA_TAGS_URL", "http://127.0.0.1:11434/api/tags"
 )
 OLLAMA_MODEL = os.environ.get(
-    "OLLAMA_MODEL", "hf.co/LiquidAI/LFM2.5-VL-450M-GGUF:Q8_0"
+    "OLLAMA_MODEL", "lfm2.5-vl:latest"
 )
 TIMEOUT_SEGUNDOS = float(os.environ.get("OLLAMA_TIMEOUT", "90"))
 
@@ -143,8 +143,8 @@ async def listar_modelos() -> list[str]:
 
 # --------------------------------------------------------------- cartão (novo)
 
-# Campos que o modelo tenta preencher na análise do cartão. Continua sendo o
-# MESMO modelo pequeno (LFM2.5-VL-450M): o prompt é curto de propósito e a
+# Campos que o modelo tenta preencher na análise do cartão. Continua sendo um
+# modelo local pequeno (LFM2.5-VL): o prompt é curto de propósito e a
 # validação pesada acontece depois, em app/validadores.py.
 CAMPOS_CARTAO = [
     "nome_empresa",
