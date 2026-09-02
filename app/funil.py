@@ -101,7 +101,3 @@ MOTIVOS_PERDA = [
 
 def estagio_valido(valor: str) -> bool:
     return valor in ESTAGIOS
-
-
-def rotulo(estagio: str) -> str:
-    return ROTULOS_ESTAGIOS.get(estagio, estagio)

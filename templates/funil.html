@@ -152,6 +152,10 @@
   .timeline li .obs { color: var(--texto-suave); font-size: 12px; }
   .timeline .acao-concluir { margin-left: 8px; padding: 2px 8px; font-size: 11px;
     border: 1px solid var(--borda); border-radius: 5px; background: #fff; cursor: pointer; }
+  /* B25: estilos mínimos das classes que o JS usa (cosmético) */
+  .tagchip { background: var(--coluna-bg); border-radius: 4px; padding: 1px 6px;
+    font-size: 11px; font-weight: 600; color: var(--texto-suave); }
+  .fotos { margin-top: 8px; }
   .vazio-acao { font-size: 13px; color: var(--destaque); font-weight: 600; margin: 6px 0; }
 
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100;
@@ -237,8 +241,10 @@
   var toggles = { atrasados: false, retorno: false, semcontato: false, meus: false };
 
   function esc(s) {
+    // B21: aspas simples também viram entidade (defesa em profundidade —
+    // valores interpolados em atributos HTML com aspas duplas)
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
   function toast(msg, tipo) {
     var el = $("toast");
@@ -270,7 +276,13 @@
     var d = String(num || "").replace(/[^\d+]/g, "");
     return d ? "tel:" + d : "";
   }
-  function hoje() { return new Date().toISOString().slice(0, 10); }
+  function hoje() {
+    // M16: data LOCAL — toISOString() devolve UTC e, entre 21h e 23h59 (BRT),
+    // marcava a ação de hoje como atrasada (~3h por dia).
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
+  }
   function dataCurta(iso) { return String(iso || "").slice(0, 16).replace("T", " "); }
   function agendadaAtrasada(l) {
     return !!(l.tem_acao_agendada && l.data_proxima_acao &&
@@ -315,11 +327,11 @@
     var ago = l.tem_acao_agendada && l.data_proxima_acao
       ? '<span class="tempo' + (agendadaAtrasada(l) ? " atrasado" : "") + '">' +
         esc(dataCurta(l.data_proxima_acao).slice(0, 10)) + "</span>" : "";
-    var tempo = '<span class="tempo">⏳ ' + l.tempo_no_estagio_dias + "d no estágio</span>";
+    var tempo = '<span class="tempo">⏳ ' + (l.tempo_no_estagio_dias || 0) + "d no estágio</span>";
     var valor = l.valor_estimado > 0 ? '<span class="card-valor">' + esc(moeda(l.valor_estimado)) + "</span>" : "";
     var classes = "card-lead" + (l.estagnado ? " estagnado" : "") + (agendadaAtrasada(l) ? " acao-atrasada" : "");
-    return '<div class="' + classes + '" draggable="true" data-id="' + l.id +
-      '" onclick="abrirLead(' + l.id + ')">' +
+    return '<div class="' + classes + '" draggable="true" data-id="' + Number(l.id) +
+      '" onclick="abrirLead(' + Number(l.id) + ')">' +
       '<div class="card-topo">' + img +
       '<div class="nomes"><div class="nome">' + campana + esc(l.nome_empresa || "—") + "</div>" +
       '<div class="sub">' + esc(l.nome_contato || "") + (l.whatsapp ? " · " + esc(l.whatsapp) : "") + "</div>" +
@@ -367,32 +379,40 @@
     return q;
   }
 
+  // M18: respostas fora de ordem não sobrescrevem o kanban — só a chamada
+  // mais recente de carregar() renderiza.
+  var seqCarregar = 0;
   function carregar() {
+    var minha = ++seqCarregar;
     var s = paramsApi().toString();
     fetch("/api/funil" + (s ? "?" + s : ""))
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (minha !== seqCarregar) return; // resposta velha — ignora
         if (!d.success) { $("kanban").innerHTML = '<div class="painel">Erro ao carregar os leads. Recarregue a página.</div>'; return; }
         leads = d.leads || [];
         renderKanban();
         carregarMetricas();
       })
       .catch(function () {
+        if (minha !== seqCarregar) return;
         $("kanban").innerHTML = '<div class="painel">Não consegui carregar os leads. ' +
           'Verifique a conexão e recarregue a página.</div>';
       });
   }
 
   function carregarMetricas() {
-    var q = new URLSearchParams();
-    if ($("f-de").value) q.set("de", $("f-de").value);
-    if ($("f-ate").value) q.set("ate", $("f-ate").value);
-    if (USUARIO_NOME && USUARIO_PEDE_GESTOR) q.set("responsavel", USUARIO_NOME);
+    // M21: mesmos filtros do kanban (de/ate/responsável) — antes as métricas
+    // ignoravam o responsável escolhido e contradiziam a lista.
+    var q = paramsApi();
     var s = q.toString();
     fetch("/api/funil/metricas" + (s ? "?" + s : ""))
       .then(function (r) { return r.json(); })
       .then(function (d) { renderMetricas(d.metricas); })
-      .catch(function () { /* métricas são acessórias — kanban segue de pé */ });
+      .catch(function () {
+        // M22: antes falhava em silêncio e deixava "Carregando métricas…" para sempre
+        $("metricas").textContent = "Métricas indisponíveis.";
+      });
   }
 
   // V3 (5.1): salvar o valor estimado editado no bloco de dados
@@ -430,12 +450,16 @@
     return $("sel-usuario") ? $("sel-usuario").value : (USUARIO_NOME || "");
   }
 
+  // M20: estágio para pré-selecionar no modal quando o drag cai numa coluna
+  // que exige motivo/observação (perdido/negociação).
+  var pendenteEstagio = null;
   window.soltarNaColuna = function (e, estagio) {
     e.preventDefault();
     e.currentTarget.classList.remove("over");
     var id = parseInt(e.dataTransfer.getData("text/plain"), 10);
     if (!id) return;
     if (estagio === "perdido" || estagio === "negociacao") {
+      pendenteEstagio = estagio;
       abrirLead(id); // motivos/observação obrigatória: sempre pelo modal de detalhe
       return;
     }
@@ -444,6 +468,10 @@
   document.addEventListener("dragstart", function (e) {
     var card = e.target && e.target.closest ? e.target.closest(".card-lead") : null;
     if (card) e.dataTransfer.setData("text/plain", card.getAttribute("data-id"));
+  });
+  // B22: drag cancelado fora da coluna deixava a borda .over presa
+  document.addEventListener("dragend", function () {
+    document.querySelectorAll(".coluna.over").forEach(function (c) { c.classList.remove("over"); });
   });
 
   // ---------------- detalhe do lead ----------------
@@ -493,8 +521,9 @@
       h += ' <span class="quando">' + esc(dataCurta(a.data_hora)) + "</span>";
       if (a.responsavel) h += ' <span class="quando">· ' + esc(a.responsavel) + "</span>";
       if (st === "agendada") {
-        h += ' <button class="acao-concluir" data-aid="' + a.id + '" onclick="concluirAtividade(' +
-          a.id + ')">✓ concluída</button>';
+        // A6: SEM onclick inline — só o listener em conectarConcluir(). Os
+        // dois juntos disparavam o POST duas vezes no mesmo clique.
+        h += ' <button type="button" class="acao-concluir" data-aid="' + a.id + '">✓ concluída</button>';
       }
       h += "</li>";
     });
@@ -510,7 +539,7 @@
         var l = d.lead;
         var tel = telUrl(l.whatsapp || l.telefone);
         var wa = whatsappUrl(l.whatsapp || l.telefone);
-        var h = '<button class="fechar">✕</button>';
+        var h = '<button type="button" class="fechar">✕</button>';
         h += "<h2>" + esc(l.nome_empresa || ("Lead #" + l.id)) + "</h2>";
         h += '<div class="sub">Lead #' + l.id + " · " + esc(ROTULOS[l.estagio] || l.estagio) +
           (l.responsavel_atual ? " · 👤 " + esc(l.responsavel_atual) : "") + "</div>";
@@ -565,9 +594,13 @@
         // mover estágio
         h += '<div class="bloco" id="bloco-mover"><h3>➡ Mudar estágio</h3>' +
           '<label>Responsável pela ação</label><select id="sel-usuario">' +
+          (USUARIO_NOME ? "" : '<option value="">— responsável —</option>') +
           RESPONSAVEIS.map(function (r) {
             var nome = typeof r === "string" ? r : r.nome;
-            return '<option' + (nome === (l.responsavel_atual || USUARIO_NOME) ? " selected" : "") + ">" + esc(nome) + "</option>";
+            // M14: <option> SEM value usa o textContent — e o textContent tem
+            // entidades (&amp; etc.), corrompendo o valor salvo. Agora o value
+            // é o nome real (escapado no atributo e no texto).
+            return '<option value="' + esc(nome) + '"' + (nome === (l.responsavel_atual || USUARIO_NOME) ? " selected" : "") + ">" + esc(nome) + "</option>";
           }).join("") + "</select>" +
           '<label>Destino</label><select id="mv-estagio">' +
           ESTAGIOS.filter(function (e) { return e !== l.estagio; }).map(function (e) {
@@ -575,7 +608,7 @@
           }).join("") + "</select>" +
           '<div id="mv-perda" style="display:none"><label>Motivo da perda *</label>' +
           '<select id="mv-motivo"><option value="">Escolha o motivo…</option>' +
-          MOTIVOS_PERDA.map(function (mo) { return "<option>" + esc(mo) + "</option>"; }).join("") +
+          MOTIVOS_PERDA.map(function (mo) { return '<option value="' + esc(mo) + '">' + esc(mo) + "</option>"; }).join("") +
           "</select>" +
           '<input type="text" id="mv-motivo-outro" placeholder="Descreva o motivo" style="display:none;width:100%;margin-top:6px"></div>' +
           '<div id="mv-obs-wrap"><label id="mv-obs-rotulo">Observação (opcional)</label>' +
@@ -651,6 +684,7 @@
       e.preventDefault(); $("pa-form").style.display = "block"; $("pa-acao").focus();
     });
     $("btn-salvar-pa").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; // M19: sem duplo POST
       fetch("/api/funil/" + id + "/proxima-acao", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -661,26 +695,27 @@
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           if (res.ok && res.d.success) { toast("Próxima ação agendada."); fecharModal(); carregar(); }
-          else falhaAoSalvar(res.d.error);
+          else { falhaAoSalvar(res.d.error); btn.disabled = false; }
         })
-        .catch(function () { falhaAoSalvar("falha de conexão"); });
+        .catch(function () { falhaAoSalvar("falha de conexão"); btn.disabled = false; });
     });
 
     // ligação
     $("btn-salvar-ligacao").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; // M19: sem duplo POST
       fetch("/api/funil/" + id + "/ligacao", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feita: $("li-feita").checked, virou_lead: $("li-virou").checked,
-          observacao: $("li-obs").value, usuario: $("sel-usuario").value,
+          observacao: $("li-obs").value, usuario: usuarioDaAcao(),
         }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           if (res.ok && res.d.success) { toast("Ligação registrada."); fecharModal(); carregar(); }
-          else falhaAoSalvar(res.d.error);
+          else { falhaAoSalvar(res.d.error); btn.disabled = false; }
         })
-        .catch(function () { falhaAoSalvar("falha de conexão"); });
+        .catch(function () { falhaAoSalvar("falha de conexão"); btn.disabled = false; });
     });
 
     // mover estágio — motivo por lista curta (nunca diálogo cru); qualificado→negociação
@@ -696,10 +731,21 @@
     }
     selMv.addEventListener("change", atualizaMover);
     atualizaMover();
+    // M20: drag-drop em Perdido/Negociação abre o modal com o estágio JÁ
+    // selecionado — antes ficava o default do select e o lead podia ir para
+    // o estágio errado se confirmasse sem trocar.
+    if (pendenteEstagio) {
+      if (selMv.querySelector('option[value="' + pendenteEstagio + '"]')) {
+        selMv.value = pendenteEstagio;
+        atualizaMover();
+      }
+      pendenteEstagio = null;
+    }
     $("mv-motivo").addEventListener("change", function () {
       $("mv-motivo-outro").style.display = this.value === "Outro" ? "block" : "none";
     });
     $("btn-mover").addEventListener("click", function () {
+      var btn = this;
       var destino = selMv.value;
       var erro = "";
       var motivo = "";
@@ -717,17 +763,20 @@
       }
       var elErr = $("mv-erro");
       if (erro) { elErr.textContent = erro; elErr.style.display = "block"; return; }
+      btn.disabled = true; // M19: sem duplo POST
       elErr.style.display = "none";
       moverEstagio(id, destino, motivo, obs, function (msg) {
+        btn.disabled = false;
         if (msg) { elErr.textContent = msg; elErr.style.display = "block"; }
       });
     });
 
     // registrar interação
     $("btn-registrar-it").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; // M19: sem duplo POST
       fetch("/api/funil/" + id + "/atividade", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo: $("it-tipo").value, descricao: $("it-desc").value, usuario: $("sel-usuario").value }),
+        body: JSON.stringify({ tipo: $("it-tipo").value, descricao: $("it-desc").value, usuario: usuarioDaAcao() }),
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
@@ -736,9 +785,10 @@
             $("it-desc").value = "";
             $("tl-wrap").innerHTML = timelineHtml(res.d.lead.atividades || []);
             conectarConcluir();
-          } else falhaAoSalvar(res.d.error);
+            btn.disabled = false;
+          } else { falhaAoSalvar(res.d.error); btn.disabled = false; }
         })
-        .catch(function () { falhaAoSalvar("falha de conexão"); });
+        .catch(function () { falhaAoSalvar("falha de conexão"); btn.disabled = false; });
     });
     conectarConcluir();
 
@@ -751,6 +801,7 @@
       if (mostrando) $("ed-empresa").focus();
     });
     $("btn-salvar-ed").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; // M19: sem duplo POST
       var corpo = new URLSearchParams();
       corpo.set("lead_id", String(id));
       corpo.set("nome_empresa", $("ed-empresa").value);
@@ -760,17 +811,18 @@
       corpo.set("email", $("ed-email").value);
       corpo.set("cidade", $("ed-cidade").value);
       corpo.set("ramo_atividade", $("ed-ramo").value);
+      // B23: resposta 4xx/5xx com corpo não-JSON não vira "falha de conexão"
       fetch("/leads", { method: "POST", body: corpo })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.success) {
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (res.ok && res.d.success) {
             if (window.salvarValor) window.salvarValor(id, $("ed-valor").value, function () {
               toast("Dados atualizados."); fecharModal(); carregar();
             });
             else { toast("Dados atualizados."); fecharModal(); carregar(); }
-          } else falhaAoSalvar(d.error);
+          } else { falhaAoSalvar(res.d.error || "erro ao salvar"); btn.disabled = false; }
         })
-        .catch(function () { falhaAoSalvar("falha de conexão"); });
+        .catch(function () { falhaAoSalvar("falha de conexão"); btn.disabled = false; });
     });
   }
 
@@ -785,6 +837,8 @@
 
   window.concluirAtividade = function (aid) {
     if (!modalAberto) return;
+    var btn = document.querySelector('.acao-concluir[data-aid="' + aid + '"]');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; } // M19: sem duplo POST
     fetch("/api/funil/" + modalAberto + "/atividade/" + aid + "/concluir", { method: "POST" })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
@@ -793,9 +847,9 @@
           var tl = $("tl-wrap");
           if (tl) { tl.innerHTML = timelineHtml(res.d.lead.atividades || []); conectarConcluir(); }
           carregar();
-        } else falhaAoSalvar(res.d.error);
+        } else { falhaAoSalvar(res.d.error); if (btn) btn.disabled = false; }
       })
-      .catch(function () { falhaAoSalvar("falha de conexão"); });
+      .catch(function () { falhaAoSalvar("falha de conexão"); if (btn) btn.disabled = false; });
   };
 
   window.abrirLead = abrirLead;
@@ -806,7 +860,7 @@
 
   // ---------------- novo lead ----------------
   function abrirNovo() {
-    var h = '<button class="fechar">✕</button><h2>Novo Lead</h2>' +
+    var h = '<button type="button" class="fechar">✕</button><h2>Novo Lead</h2>' +
       '<div class="sub">Digite o essencial agora — dá pra completar depois no card.</div>' +
       '<div class="novo-campos">' +
       '<div><label>Empresa *</label><input type="text" id="nl-empresa"></div>' +
@@ -825,6 +879,7 @@
     $("novo-modal").querySelector(".fechar").addEventListener("click", fecharNovo);
     $("nl-empresa").focus();
     $("btn-salvar-novo").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; // M19: sem duplo POST
       var corpo = {
         nome_empresa: $("nl-empresa").value.trim(),
         nome_contato: $("nl-contato").value.trim(),
@@ -843,12 +898,14 @@
           if (res.ok && res.d.success) {
             toast("Lead criado."); fecharNovo(); carregar(); abrirLead(res.d.id);
           } else {
+            btn.disabled = false;
             var el = $("nl-erro");
             el.textContent = res.d.error || "Não foi possível criar o lead. Tente novamente.";
             el.style.display = "block";
           }
         })
         .catch(function () {
+          btn.disabled = false;
           var el = $("nl-erro");
           el.textContent = "Falha de conexão — nada foi salvo. Tente novamente.";
           el.style.display = "block";
@@ -953,9 +1010,19 @@
     var bm = $("f-meus"); if (bm) bm.classList.toggle("on", toggles.meus);
     $("f-responsavel").value = ""; $("f-origem").value = "";
     $("f-de").value = ""; $("f-ate").value = ""; $("f-busca").value = "";
+    // M17: "Limpar" também zera o seletor mobile — antes as colunas
+    // continuavam filtradas no celular.
+    $("m-estagio").value = "";
     carregar();
   });
   $("f-busca").addEventListener("keydown", function (e) { if (e.key === "Enter") carregar(); });
+  // B26: Esc fecha os modais
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      if ($("modal-fundo").classList.contains("aberto")) fecharModal();
+      if ($("novo-fundo").classList.contains("aberto")) fecharNovo();
+    }
+  });
   $("btn-rp").addEventListener("click", carregarPerdas);
   $("relatorio-perdas").addEventListener("toggle", function () {
     if (this.open && !this._carregado) { this._carregado = true; carregarPerdas(); }

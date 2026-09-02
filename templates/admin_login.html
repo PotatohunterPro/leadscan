@@ -48,6 +48,7 @@
     <p>LeadScan — área restrita. Digite a senha para continuar.</p>
     {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
     <form method="post" action="/admin/login">
+      <input type="hidden" name="token" value="{{ token }}">
       {% if usuarios %}
       <label for="usuario">Quem está entrando</label>
       <select name="usuario" id="usuario" style="width:100%;padding:12px;border:1px solid var(--borda);border-radius:10px;font-size:15px;margin-bottom:10px">

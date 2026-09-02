@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # DATA_DIR precisa existir ANTES de importar app.db (o módulo lê no import)
 _TMP = tempfile.mkdtemp(prefix="leadscan-test-api-")
 os.environ["DATA_DIR"] = _TMP
+os.environ.setdefault("SESSION_SECRET", "chave-de-teste-leadscan")
 
 from PIL import Image  # noqa: E402
 
@@ -282,7 +283,11 @@ class TestLeadsPersistencia(unittest.TestCase):
         self.assertFalse((db.FOTOS_DIR / "orfao-frente.jpg").exists())
 
     def test_leads_atualiza_cartao_preservando_manuais(self):
-        """Edição (lead_id): cartão atualiza, campos manuais permanecem."""
+        """Edição (lead_id): cartão atualiza, campos manuais permanecem.
+
+        C1: editar lead existente exige sessão de admin — a rota pública de
+        captura só CRIA (sem lead_id); atualizar é operação autenticada."""
+        _login_admin(self.client)
         resp = self.client.post("/leads", data={
             "nome_contato": "Carlos",
             "anotacoes": "nota original",
@@ -308,6 +313,7 @@ class TestLeadsPersistencia(unittest.TestCase):
 
     def test_leads_atualizar_sem_cartao_nao_apaga_cartao(self):
         """Atualização sem cartao_json não apaga o cartão já gravado."""
+        _login_admin(self.client)
         resp = self.client.post("/leads", data={
             "nome_empresa": "A",
             "cartao_json": _cartao_json(),

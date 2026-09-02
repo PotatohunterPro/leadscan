@@ -164,8 +164,13 @@ class TestAtividadeAgendada(unittest.TestCase):
         db.salvar_proxima_acao(self.lid, "Ligar", "2026-09-10")
         db.salvar_proxima_acao(self.lid, "Enviar proposta", "2026-09-12")
         ats = db.atividades_do_lead(self.lid)
-        self.assertEqual(ats[0]["status"], "agendada")  # nova
-        self.assertEqual(ats[1]["status"], "cancelada")  # antiga
+        # B6: a troca registra "Ação cancelada — substituída" na timeline;
+        # a atividade antiga (tipo proxima_acao, 2ª no histórico) fica
+        # cancelada e a nova segue agendada.
+        status_por_tipo = [a for a in ats if a["tipo"] == "proxima_acao"]
+        self.assertEqual(status_por_tipo[0]["status"], "agendada")  # nova
+        self.assertEqual(status_por_tipo[1]["status"], "cancelada")  # antiga
+        self.assertIn("Ação cancelada — substituída", ats[1]["descricao"])
         # só uma agendada pendente → 🔔 continua presente
         lead = db.listar_funil(busca="Agend")[0]
         self.assertTrue(lead["tem_acao_agendada"])

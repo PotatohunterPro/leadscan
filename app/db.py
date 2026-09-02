@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -157,30 +158,44 @@ def init_db() -> None:
 
     Também roda a migração das colunas de 'leads': bancos antigos ganham as
     colunas novas com ALTER TABLE — nenhum dado é apagado ou reescrito.
+    B11: toda a migração roda dentro de BEGIN IMMEDIATE (lock de escrita
+    exclusivo) — com 2+ workers num banco novo, um request podia INSERTar
+    antes dos ALTER TABLE e falhar com "no such column". Retry curto se o
+    lock estiver ocupado por outro worker.
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     FOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    with _conexao() as con:
-        con.execute(_SCHEMA)
-        con.execute(_SCHEMA_CARTAO)
-        con.execute(_SCHEMA_FUNIL)
-        con.execute(_SCHEMA_ATIVIDADES)
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_lead_cartao_lead ON lead_cartao(lead_id)"
-        )
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_hist_estagio_lead ON historico_estagios(lead_id)"
-        )
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_atividades_lead ON lead_atividades(lead_id)"
-        )
-        _migrar_colunas(con)
-        _migrar_funil(con)
-        _migrar_origem(con)
-        _migrar_atividades(con)
-        con.execute(_SCHEMA_USUARIOS)
-        _semear_usuarios(con)
-    logger.info("Banco pronto em %s", DB_PATH)
+    for tentativa in range(5):
+        try:
+            with _conexao() as con:
+                con.execute("BEGIN IMMEDIATE")
+                con.execute(_SCHEMA)
+                con.execute(_SCHEMA_CARTAO)
+                con.execute(_SCHEMA_FUNIL)
+                con.execute(_SCHEMA_ATIVIDADES)
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_lead_cartao_lead ON lead_cartao(lead_id)"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_hist_estagio_lead ON historico_estagios(lead_id)"
+                )
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_atividades_lead ON lead_atividades(lead_id)"
+                )
+                _migrar_colunas(con)
+                _migrar_funil(con)
+                _migrar_origem(con)
+                _migrar_atividades(con)
+                con.execute(_SCHEMA_USUARIOS)
+                _migrar_usuarios(con)
+                _semear_usuarios(con)
+            logger.info("Banco pronto em %s", DB_PATH)
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or tentativa == 4:
+                raise
+            logger.warning("Banco ocupado na inicialização (tentativa %d) — %s", tentativa + 1, exc)
+            time.sleep(0.1 * (tentativa + 1))
 
 
 def _semear_usuarios(con: sqlite3.Connection) -> None:
@@ -237,26 +252,43 @@ def _migrar_origem(con: sqlite3.Connection) -> None:
 
 
 def _migrar_atividades(con: sqlite3.Connection) -> None:
-    """V3 (5.2): garante a coluna status em lead_atividades (ALTER TABLE).
+    """V3 (5.2) + B9: garante TODAS as colunas novas de lead_atividades
+    (status, estagio_anterior, estagio_novo) via ALTER TABLE idempotente.
 
-    Bancos antigos ganham status='realizada' — nada que já existia era
-    agendado. Idempotente."""
+    Antes só 'status' era migrada — banco antigo sem estagio_anterior/
+    estagio_novo quebrava com 500 em toda timeline."""
     existentes = {
         linha["name"]
         for linha in con.execute("PRAGMA table_info(lead_atividades)").fetchall()
     }
-    if "status" not in existentes:
-        logger.info("Migração (V3): adicionando coluna status em lead_atividades")
-        con.execute(
-            "ALTER TABLE lead_atividades "
-            "ADD COLUMN status TEXT NOT NULL DEFAULT 'realizada'"
-        )
+    for coluna, definicao in (
+        ("status", "TEXT NOT NULL DEFAULT 'realizada'"),
+        ("estagio_anterior", "TEXT DEFAULT ''"),
+        ("estagio_novo", "TEXT DEFAULT ''"),
+    ):
+        if coluna not in existentes:
+            logger.info("Migração (V3): adicionando coluna %s em lead_atividades", coluna)
+            con.execute(f"ALTER TABLE lead_atividades ADD COLUMN {coluna} {definicao}")
+
+
+def _migrar_usuarios(con: sqlite3.Connection) -> None:
+    """B9: tabela usuarios criada antes da V3 não tem a coluna 'papel'."""
+    existentes = {
+        linha["name"] for linha in con.execute("PRAGMA table_info(usuarios)").fetchall()
+    }
+    if "papel" not in existentes:
+        logger.info("Migração (V3): adicionando coluna papel em usuarios")
+        con.execute("ALTER TABLE usuarios ADD COLUMN papel TEXT NOT NULL DEFAULT 'sdr'")
 
 
 @contextmanager
 def _conexao():
-    con = sqlite3.connect(DB_PATH)
+    # M6: WAL (leitores não bloqueiam escrita) + busy_timeout explícito —
+    # "database is locked" vira espera curta em vez de 500 em rajada.
+    con = sqlite3.connect(DB_PATH, timeout=10)
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode = WAL")
+    con.execute("PRAGMA busy_timeout = 10000")
     # item 39 da spec: foreign keys ativas (leads -> lead_cartao/atividades/histórico)
     con.execute("PRAGMA foreign_keys = ON")
     try:
@@ -277,7 +309,7 @@ def salvar_lead(dados: dict, origem: str = "manual") -> int:
     (/extract salvar=1 ou POST /leads com cartao_json); default 'manual'.
     A origem NUNCA muda depois (item 47): edições não tocam nela.
     """
-    dados = {c: str(dados.get(c, "")).strip() for c in CAMPOS}
+    dados = {c: str(dados.get(c) or "").strip() for c in CAMPOS}
     if origem not in ("manual", "cartao"):
         origem = "manual"
     with _conexao() as con:
@@ -300,7 +332,7 @@ def atualizar_lead(lead_id: int, dados: dict) -> bool:
     with _conexao() as con:
         con.execute(
             f"UPDATE leads SET {', '.join(f'{c} = ?' for c in colunas)} WHERE id = ?",
-            [str(dados[c]).strip() for c in colunas] + [lead_id],
+            [str(dados[c] or "").strip() for c in colunas] + [lead_id],
         )
     return True
 
@@ -329,12 +361,15 @@ def listar_leads(
     busca: str = "",
     de: str | None = None,
     ate: str | None = None,
+    responsavel: str = "",
     limite: int = 50,
 ) -> list[dict]:
     """Lista leads mais recentes primeiro, com busca e filtro por período.
 
     - busca: casa com nome_empresa, nome_contato ou whatsapp.
     - de/ate: datas ISO (YYYY-MM-DD) para filtrar por criado_em.
+    - responsavel (A2, 5.5): restringe aos leads do responsável atual —
+      aplicado na QUERY, nunca escondido só na UI.
     """
     sql = "SELECT * FROM leads WHERE 1=1"
     params: list = []
@@ -348,6 +383,9 @@ def listar_leads(
     if ate:
         sql += " AND date(criado_em) <= ?"
         params.append(ate)
+    if responsavel:
+        sql += " AND responsavel_atual = ?"
+        params.append(responsavel)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(max(1, int(limite)))
     with _conexao() as con:
@@ -366,6 +404,10 @@ def salvar_cartao(lead_id: int, info: dict) -> int:
     """
     if not info:
         return 0
+    # B10: lead inexistente não pode ganhar cartão (FK) — ValueError vira 422
+    # na API, não IntegrityError cru (500).
+    if not buscar_lead(lead_id):
+        raise ValueError("Lead não encontrado")
     payload = json.dumps(info, ensure_ascii=False)
     ocr_texto = str((info.get("ocr") or {}).get("texto", ""))
     agora = agora_iso()
@@ -427,6 +469,21 @@ def buscar_lead_completo(lead_id: int) -> dict | None:
     return lead
 
 
+def buscar_lead_por_foto(nome: str) -> int | None:
+    """lead_id do lead que referencia a foto 'fotos/<nome>' (ou None).
+
+    B17: usado para conferir propriedade antes de servir /fotos/{nome}.
+    Procura nas colunas de foto do lead e no JSON do cartão."""
+    caminho = f"fotos/{nome}"
+    with _conexao() as con:
+        linha = con.execute(
+            "SELECT id FROM leads WHERE foto_frente_path = ? OR foto_verso_path = ? "
+            "UNION SELECT lead_id FROM lead_cartao WHERE dados_json LIKE ? LIMIT 1",
+            [caminho, caminho, f"%{nome}%"],
+        ).fetchone()
+        return int(linha["id"]) if linha else None
+
+
 def leads_com_cartao(ids: list[int]) -> dict[int, dict]:
     """Cartões de vários leads de uma vez (usado no painel/CSV)."""
     if not ids:
@@ -446,16 +503,13 @@ def leads_com_cartao(ids: list[int]) -> dict[int, dict]:
     return saida
 
 
-def total_cartoes() -> int:
-    with _conexao() as con:
-        return int(con.execute("SELECT COUNT(*) FROM lead_cartao").fetchone()[0])
-
-
 def ultima_extracao_sucesso() -> str | None:
-    """criado_em do lead mais recente — 'última vez que validei com foto real'."""
+    """criado_em do lead mais recente vindo de CARTÃO — 'última vez que
+    validei com foto real'. B5: antes pegava o lead mais novo de qualquer
+    origem (manual também), o que enganava o status."""
     with _conexao() as con:
         linha = con.execute(
-            "SELECT criado_em FROM leads ORDER BY id DESC LIMIT 1"
+            "SELECT criado_em FROM leads WHERE origem = 'cartao' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return linha["criado_em"] if linha else None
 
@@ -517,24 +571,6 @@ def _registrar_atividade(
         "UPDATE leads SET data_ultima_interacao = ? WHERE id = ?",
         [agora, lead_id],
     )
-
-
-def registrar_atividade(
-    lead_id: int,
-    tipo: str,
-    descricao: str = "",
-    responsavel: str = "",
-    estagio_anterior: str = "",
-    estagio_novo: str = "",
-) -> None:
-    """Versão pública (transação própria) — usada fora de mudar_estagio etc."""
-    if not buscar_lead(lead_id):
-        raise ValueError("Lead não encontrado")
-    with _conexao() as con:
-        _registrar_atividade(
-            con, lead_id, tipo, descricao, responsavel,
-            estagio_anterior, estagio_novo,
-        )
 
 
 def atividades_do_lead(lead_id: int) -> list[dict]:
@@ -639,7 +675,7 @@ def mudar_estagio(
     Levanta ValueError com a mensagem da regra quebrada (a API devolve 422).
     Idempotente: mover para o estágio atual não grava histórico duplicado.
     """
-    from .funil import ESTAGIOS, estagio_valido
+    from .funil import ESTAGIOS, MOTIVOS_PERDA, estagio_valido
 
     if not estagio_valido(estagio):
         raise ValueError(
@@ -650,6 +686,16 @@ def mudar_estagio(
         raise ValueError("Lead não encontrado")
     if lead["estagio"] == estagio:
         return lead
+    # M9: gestor agindo sem informar usuário não "desdona" o lead — preserva
+    # o responsável atual em vez de gravar ''.
+    usuario = (usuario or "").strip() or lead["responsavel_atual"]
+    motivo_perda = (motivo_perda or "").strip()
+    if estagio == "perdido" and motivo_perda:
+        # M13: motivo fora da lista vira "Outro: <texto>" — o relatório de
+        # perdas não polui com variações digitadas à mão. (Vazio continua
+        # vazio: a regra de motivo obrigatório é checada logo abaixo.)
+        if motivo_perda not in MOTIVOS_PERDA and not motivo_perda.startswith("Outro"):
+            motivo_perda = "Outro: " + motivo_perda
     if estagio == "qualificado":
         if not lead["ligacao_feita"]:
             raise ValueError(
@@ -680,13 +726,27 @@ def mudar_estagio(
                 "UPDATE leads SET estagio = ?, data_estagio_atual = ?, "
                 "responsavel_atual = ?, motivo_perda = ?, "
                 "data_ultima_interacao = ? WHERE id = ?",
-                [estagio, agora, usuario, (motivo_perda or "").strip(), agora, lead_id],
+                [estagio, agora, usuario, motivo_perda, agora, lead_id],
             )
         else:
             con.execute(
                 "UPDATE leads SET estagio = ?, data_estagio_atual = ?, "
                 "responsavel_atual = ?, data_ultima_interacao = ? WHERE id = ?",
                 [estagio, agora, usuario, agora, lead_id],
+            )
+        # A5: fechar/perder o lead CANCELA a próxima ação agendada e limpa as
+        # 3 colunas — antes o lead continuava com 🔔 e reaparecia nos filtros
+        # de retorno/atrasado mesmo ganho ou perdido. Mesma transação.
+        if estagio in ("fechado", "perdido"):
+            con.execute(
+                "UPDATE lead_atividades SET status = 'cancelada' "
+                "WHERE lead_id = ? AND tipo = 'proxima_acao' AND status = 'agendada'",
+                [lead_id],
+            )
+            con.execute(
+                "UPDATE leads SET proxima_acao = '', data_proxima_acao = '', "
+                "proxima_acao_observacao = '' WHERE id = ?",
+                [lead_id],
             )
         con.execute(
             "INSERT INTO historico_estagios (lead_id, estagio, data, "
@@ -730,15 +790,28 @@ def registrar_ligacao(
     """
     if not buscar_lead(lead_id):
         raise ValueError("Lead não encontrado")
+    # M9: sem usuário informado (gestor), preserva o responsável atual.
+    usuario = (usuario or "").strip() or buscar_lead(lead_id)["responsavel_atual"]
     agora = agora_iso()
     with _conexao() as con:
-        con.execute(
-            "UPDATE leads SET ligacao_feita = ?, ligacao_virou_lead = ?, "
-            "ligacao_observacao = ?, data_ligacao = ?, responsavel_atual = ?, "
-            "data_ultima_interacao = ? WHERE id = ?",
-            [1 if feita else 0, 1 if virou_lead else 0,
-             (observacao or "").strip(), agora, usuario, agora, lead_id],
-        )
+        if feita:
+            con.execute(
+                "UPDATE leads SET ligacao_feita = 1, ligacao_virou_lead = ?, "
+                "ligacao_observacao = ?, data_ligacao = ?, responsavel_atual = ?, "
+                "data_ultima_interacao = ? WHERE id = ?",
+                [1 if virou_lead else 0, (observacao or "").strip(), agora,
+                 usuario, agora, lead_id],
+            )
+        else:
+            # B4: "ligação não feita" não grava data_ligacao — não pode
+            # parecer que houve contato.
+            con.execute(
+                "UPDATE leads SET ligacao_feita = 0, ligacao_virou_lead = ?, "
+                "ligacao_observacao = ?, responsavel_atual = ?, "
+                "data_ultima_interacao = ? WHERE id = ?",
+                [1 if virou_lead else 0, (observacao or "").strip(), usuario,
+                 agora, lead_id],
+            )
         descricao = "📞 Ligação registrada" + (
             " — virou lead" if virou_lead else " — não virou lead"
         )
@@ -774,12 +847,21 @@ def salvar_proxima_acao(
         )
         if acao:
             # V3 (5.2): uma próxima ação agendada por vez — a pendente
-            # anterior (tipo proxima_acao e ainda 'agendada') vira cancelada.
-            con.execute(
-                "UPDATE lead_atividades SET status = 'cancelada' "
+            # anterior vira cancelada, com registro na timeline (B6): antes
+            # era cancelada em silêncio.
+            pendentes = con.execute(
+                "SELECT id FROM lead_atividades "
                 "WHERE lead_id = ? AND tipo = 'proxima_acao' AND status = 'agendada'",
                 [lead_id],
-            )
+            ).fetchall()
+            for p in pendentes:
+                con.execute(
+                    "UPDATE lead_atividades SET status = 'cancelada' WHERE id = ?",
+                    [p["id"]],
+                )
+                _registrar_atividade(
+                    con, lead_id, "observacao", "🚫 Ação cancelada — substituída", usuario,
+                )
             descricao = acao
             if data:
                 descricao += f" em {data}"
@@ -918,14 +1000,22 @@ def listar_funil(
         params.append(origem)
     if sem_contato:
         sql += " AND ligacao_feita = 0"
+    # A4: comparação por DIA. O front envia data pura (<input type=date>,
+    # ex.: "2026-09-02"); comparar com timestamp completo ("2026-09-02" <
+    # "2026-09-02T14:30:00+00:00") marcava TODO lead com retorno hoje como
+    # atrasado desde a meia-noite.
     if atrasados:
         sql += (
-            " AND data_proxima_acao != '' AND data_proxima_acao < ? "
+            " AND data_proxima_acao != '' AND date(data_proxima_acao) < date('now') "
             "AND estagio NOT IN ('fechado', 'perdido')"
         )
-        params.append(agora_iso())
+    # M1: retorno_hoje também exclui fechado/perdido — sem isso, com o A5
+    # ainda pendente, lead ganho/perdido continuava aparecendo em "Retorno hoje".
     if retorno_hoje:
-        sql += " AND date(data_proxima_acao) = date('now')"
+        sql += (
+            " AND data_proxima_acao != '' AND date(data_proxima_acao) = date('now') "
+            "AND estagio NOT IN ('fechado', 'perdido')"
+        )
     if de:
         sql += " AND date(criado_em) >= ?"
         params.append(de)
@@ -1004,22 +1094,27 @@ def metricas_funil(
     with _conexao() as con:
         linhas = con.execute(
             f"SELECT estagio, COUNT(*) AS n, SUM(valor_estimado) AS soma, "
-            f"ROUND(SUM(valor_estimado * {case_prob}), 2) AS esperado "
+            f"SUM(valor_estimado * {case_prob}) AS esperado "
             f"FROM leads {where} GROUP BY estagio",
             params,
         ).fetchall()
-        # valor esperado dos leads ABERTOS (fora de fechado/perdido)
-        esperado_total = con.execute(
-            f"SELECT COALESCE(ROUND(SUM(valor_estimado * {case_prob}), 2), 0) "
-            f"FROM leads {where} AND estagio NOT IN ('fechado', 'perdido')",
-            params,
-        ).fetchone()[0]
     contagem = {l["estagio"]: int(l["n"]) for l in linhas}
-    esperado_por_estagio = {
-        l["estagio"]: float(l["esperado"]) for l in linhas if l["esperado"]
-    }
+    # M3 + B1: o mapa de valor esperado cobre os MESMOS leads do total
+    # (abertos, fora de fechado/perdido) e inclui estágios com esperado 0.0.
+    # Os valores por estágio ficam SEM arredondamento e o total arredonda a
+    # SOMA deles — assim total == Σ(por_estagio) exato E total == ROUND(SUM)
+    # direto no banco (sem o erro de arredondamento duplo por estágio).
+    esperado_por_estagio: dict[str, float] = {}
+    for l in linhas:
+        if l["estagio"] in ("fechado", "perdido"):
+            continue  # fora do pipeline (fechado é valor realizado, perdido é 0)
+        esperado_por_estagio[l["estagio"]] = float(l["esperado"] or 0)
+    esperado_total = round(sum(esperado_por_estagio.values()), 2)
     total = sum(contagem.values())
     fechados = contagem.get("fechado", 0)
+    # B3: denominador = TODOS os leads (inclui perdidos) — conversão bruta do
+    # pipeline. Decisão documentada: se quiser conversão sobre leads trabalhados
+    # (sem perdidos), trocar por (total - contagem.get("perdido", 0)).
     conversao = round(fechados / total * 100, 1) if total else 0.0
     especificos = _tempo_medio_especifico(de, ate, responsavel)
     return {
@@ -1034,10 +1129,16 @@ def metricas_funil(
 
 
 def _case_probabilidade(probs: dict[str, int]) -> str:
-    """Expressão SQL `CASE estagio WHEN 'novo' THEN 0.05 ... END`."""
+    """Expressão SQL `CASE estagio WHEN 'novo' THEN 0.05 ... END`.
+
+    B2: os nomes de estágio entram no SQL — só valores da whitelist do funil
+    (nunca input do cliente), para configuração futura não virar injeção."""
+    from .funil import ESTAGIOS
+
     partes = " ".join(
         f"WHEN '{est}' THEN {prob / 100}"
         for est, prob in probs.items()
+        if est in ESTAGIOS
     )
     return f"CASE estagio {partes} ELSE 0 END"
 
@@ -1136,8 +1237,14 @@ def _tempo_medio_especifico(
     negociacoes: list[float] = []
     for lid, seq in seq_por_lead.items():
         criado = criados.get(lid)
+        # B7: reentradas em qualificado/negociação não contam múltiplas vezes
+        # (lead que sai e volta mede só a primeira passagem — o trecho
+        # contíguo inicial). Antes cada entrada era medida desde o criado_em.
+        viu_qualificado = False
+        viu_negociacao = False
         for i, (est, data) in enumerate(seq):
-            if est == "qualificado" and criado:
+            if est == "qualificado" and not viu_qualificado and criado:
+                viu_qualificado = True
                 d = _dias(criado, data)
                 if d is not None:
                     qualificacoes.append(d)
@@ -1145,7 +1252,8 @@ def _tempo_medio_especifico(
                 d = _dias(criado, data)
                 if d is not None:
                     fechamentos.append(d)
-            if est == "negociacao":
+            if est == "negociacao" and not viu_negociacao:
+                viu_negociacao = True
                 fim = seq[i + 1][1] if i + 1 < len(seq) else agora
                 d = _dias(data, fim)
                 if d is not None:
@@ -1166,11 +1274,16 @@ def _tempo_medio_por_estagio(
     """Duração média (dias) em cada estágio, a partir do histórico.
 
     Para cada entrada do histórico: a duração vai até a próxima mudança do
-    MESMO lead; a última (estágio atual) vai até agora.
+    MESMO lead. M4: o estágio 'novo' também é medido — o lead nasce em
+    'novo' por DEFAULT do banco sem entrada no histórico, então o início é
+    o criado_em (e leads que nunca saíram do novo contam até agora).
+    B8: estágio terminal (perdido/fechado) para o relógio na data da
+    entrada — duração 0 — não infla a média com meses até "agora".
     """
     sql = (
-        "SELECT h.lead_id, h.estagio, h.data "
-        "FROM historico_estagios h JOIN leads l ON l.id = h.lead_id WHERE 1=1"
+        "SELECT l.id AS lead_id, l.criado_em, h.estagio, h.data "
+        "FROM leads l LEFT JOIN historico_estagios h ON h.lead_id = l.id "
+        "WHERE 1=1"
     )
     params: list = []
     if de:
@@ -1182,20 +1295,34 @@ def _tempo_medio_por_estagio(
     if responsavel:
         sql += " AND l.responsavel_atual = ?"
         params.append(responsavel)
-    sql += " ORDER BY h.lead_id, h.id"
+    sql += " ORDER BY l.id, h.id"
     with _conexao() as con:
         linhas = con.execute(sql, params).fetchall()
     por_lead: dict[int, list[tuple[str, str]]] = {}
+    criados: dict[int, str] = {}
     for l in linhas:
-        por_lead.setdefault(int(l["lead_id"]), []).append((l["estagio"], l["data"]))
+        lid = int(l["lead_id"])
+        criados.setdefault(lid, l["criado_em"])
+        if l["estagio"]:
+            por_lead.setdefault(lid, []).append((l["estagio"], l["data"]))
     acum: dict[str, float] = {}
     n: dict[str, int] = {}
     from datetime import datetime, timezone
 
     agora = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    for seq in por_lead.values():
+    for lid, seq in por_lead.items():
+        # M4: sem histórico = nasceu em 'novo' e nunca saiu; com histórico,
+        # o 'novo' começa no criado_em (a primeira entrada marca a saída).
+        inicio_novo = (criados.get(lid), "novo")
+        if not seq or seq[0][0] != "novo":
+            seq = [inicio_novo] + seq
         for i, (est, data) in enumerate(seq):
-            fim = seq[i + 1][1] if i + 1 < len(seq) else agora
+            if i + 1 < len(seq):
+                fim = seq[i + 1][1]
+            elif est in ("perdido", "fechado"):
+                fim = data  # B8: terminal para o relógio na entrada (0 dias)
+            else:
+                fim = agora
             try:
                 inicio = datetime.fromisoformat(data)
                 fim_dt = datetime.fromisoformat(fim)
@@ -1208,7 +1335,12 @@ def _tempo_medio_por_estagio(
 
 
 def agora_iso() -> str:
-    """Timestamp em UTC, sempre o mesmo fuso (predictável pro filtro de datas)."""
+    """Timestamp em UTC, sempre o mesmo fuso (predictável pro filtro de datas).
+
+    M2 (documentado): TODOS os timestamps e os filtros de data (de/ate,
+    "Retorno hoje", "Atrasados") usam o dia UTC — para um time em BRT, o
+    "dia" fecha às 21h (21h–23h59 local ainda é o dia anterior no UTC).
+    Aceito como simplificação: é consistente em todo o sistema."""
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat(timespec="seconds")

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _TMP = tempfile.mkdtemp(prefix="leadscan-test-apifunilv2-")
 os.environ["DATA_DIR"] = _TMP
+os.environ.setdefault("SESSION_SECRET", "chave-de-teste-leadscan")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -62,12 +63,13 @@ class TestFunilV2Api(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 422)
 
-    def test_atividade_lead_inexistente_422(self):
+    def test_atividade_lead_inexistente_404(self):
+        """M11: 'lead não encontrado' é 404 (antes virava 422 genérico)."""
         r = self.client.post(
             "/api/funil/999999/atividade",
             json={"tipo": "outro", "descricao": "x"},
         )
-        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.status_code, 404)
 
     def test_proxima_acao_ok(self):
         lid = self._lead()

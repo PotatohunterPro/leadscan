@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _TMP = tempfile.mkdtemp(prefix="leadscan-test-v3-")
 os.environ["DATA_DIR"] = _TMP
+os.environ.setdefault("SESSION_SECRET", "chave-de-teste-leadscan")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

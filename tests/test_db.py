@@ -55,7 +55,11 @@ class TestDb(unittest.TestCase):
         self.assertEqual(resultado[0]["nome_empresa"], "Farmácia Saúde")
 
     def test_ultima_extracao(self):
-        db.salvar_lead({"nome_empresa": "Última"})
+        # B5: a "última extração" é só de leads vindos de CARTÃO — um lead
+        # digitado à mão não pode aparecer como "validei com foto real".
+        db.salvar_lead({"nome_empresa": "Última manual"})  # manual: não conta
+        self.assertIsNone(db.ultima_extracao_sucesso())
+        db.salvar_lead({"nome_empresa": "Última cartão"}, origem="cartao")
         self.assertIsNotNone(db.ultima_extracao_sucesso())
 
     def test_lista_publica_sem_dados_sensiveis(self):
