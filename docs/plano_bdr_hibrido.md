@@ -99,8 +99,10 @@ sem tocar no manual.
   Starlette) — resposta sai rápida, o BDR não espera.
 - [x] A análise off reusa os bytes ORIGINAIS da foto (qualidade de OCR) e
   grava em `lead_cartao` as 📇, aproveitando as fotos já salvas no lead.
-- [x] **Modelo de IA:** `OLLAMA_MODEL` → `lfm2.5-vl:latest`
-  (default em `ollama_client.py`, `.env.example` e `install.sh`).
+- [x] **Modelo de IA:** `OLLAMA_MODEL` → `hf.co/LiquidAI/LFM2.5-VL-450M-Extract-GGUF:F16`
+  (default em `ollama_client.py`, `.env.example` e `install.sh`). Variante
+  `-Extract-` é dedicada a extração estruturada (JSON) — segue o formato do
+  `PROMPT_CARTAO` melhor que o `moondream`.
 - [x] **UI `/bdr` (100% off):** formulário manual vem PRIMEIRO (1 · 👤 Dados do
   lead); a foto virou "2 · 📷 Foto do cartão (opcional)". Selecionar foto só
   anexa (sem spinner, sem `/extract` na tela); 💾 Salvar envia a foto e o

@@ -24,7 +24,7 @@ OLLAMA_TAGS_URL = os.environ.get(
     "OLLAMA_TAGS_URL", "http://127.0.0.1:11434/api/tags"
 )
 OLLAMA_MODEL = os.environ.get(
-    "OLLAMA_MODEL", "lfm2.5-vl:latest"
+    "OLLAMA_MODEL", "hf.co/LiquidAI/LFM2.5-VL-450M-Extract-GGUF:F16"
 )
 TIMEOUT_SEGUNDOS = float(os.environ.get("OLLAMA_TIMEOUT", "90"))
 

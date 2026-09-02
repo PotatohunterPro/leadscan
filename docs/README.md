@@ -83,6 +83,16 @@ sudo bash install.sh
 
 O install.sh é **idempotente**: instalação inicial e atualização usam o mesmo comando. Numa VPS limpa ele instala Docker, Ollama, modelo, Nginx e Certbot automaticamente; valida as rotas com HTTP real no final; e, se CERTBOT_EMAIL estiver preenchido, emite o certificado HTTPS sozinho (o DNS já precisa apontar pra VPS). Antes de rodar de novo após alterações, sempre git pull primeiro.
 
+**Swap (memória):** o Ollama carrega o modelo de visão em RAM — em VPS pequena (1–2 GB) isso estoura com OOM ao puxar/rodar o modelo. O install.sh cria **2 GB de swap** automaticamente se ainda não existir `/swapfile` (idempotente). Se você configurou o swap manualmente antes, nada muda — o script detecta o `/swapfile` e pula. Para aumentar manualmente:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persistir no boot
+```
+
 **Atualizar o LeadScan:**
 
 ```bash

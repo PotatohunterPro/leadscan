@@ -49,6 +49,22 @@ if ! docker compose version >/dev/null 2>&1; then
     fi
 fi
 
+# 1.5 Swap (VPS pequena + modelo de IA local = OOM sem swap)
+# O Ollama carrega o modelo de visão em RAM; em VPS com pouca memória (1–2 GB)
+# ele estoura (OOM) ao puxar/rodar o modelo. Garante 2 GB de swap se não existir.
+SWAPFILE=/swapfile
+if [ -f "$SWAPFILE" ]; then
+    ok "Swap já configurado ($SWAPFILE)."
+else
+    info "Criando 2 GB de swap em $SWAPFILE (evita OOM com o modelo de IA)..."
+    fallocate -l 2G "$SWAPFILE"
+    chmod 600 "$SWAPFILE"
+    mkswap "$SWAPFILE" >/dev/null
+    swapon "$SWAPFILE"
+    grep -q "^$SWAPFILE " /etc/fstab || echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
+    ok "Swap criado e ativo."
+fi
+
 # 2. Ollama e modelo
 if ! command -v ollama >/dev/null; then
     info "Instalando Ollama..."
@@ -57,7 +73,7 @@ if ! command -v ollama >/dev/null; then
     export PATH="$PATH:/usr/local/bin"
 fi
 
-MODEL="lfm2.5-vl:latest"
+MODEL="hf.co/LiquidAI/LFM2.5-VL-450M-Extract-GGUF:F16"
 if ! ollama list | grep -q "$MODEL"; then
     info "Baixando modelo $MODEL (pode levar alguns minutos)..."
     ollama pull "$MODEL"
